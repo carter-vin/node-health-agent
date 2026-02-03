@@ -185,3 +185,7 @@ cython_debug/
 spool/
 state/
 logs/
+*.db
+*.sqlite
+*.sqlite3
+*.log

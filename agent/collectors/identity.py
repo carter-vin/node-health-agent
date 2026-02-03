@@ -99,7 +99,7 @@ def collect_identity(state_dir: Path = DEFAULT_STATE_DIR) -> IdentityResult:
     # node_id selection: override first, then hostname
     node_id = os.getenv(NODE_ID_ENV)
     if not node_id:
-        node_id = socket.gethostname()
+        node_id = "dev-node"
 
     # boot_id selection: Linux proc, else dev cache
     boot_id = _read_linux_boot_id()
