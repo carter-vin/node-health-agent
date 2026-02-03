@@ -19,8 +19,15 @@ import platform
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 
 import typer
+
+from agent.collectors.heartbeat import collect_heartbeat
+from agent.collectors.identity import collect_identity
+from agent.emit import EmitTargets, emit_report_json
+from agent.model import build_report_from_collectors, report_to_json
+
 
 # Explicit multi-command CLI
 app = typer.Typer(
@@ -96,6 +103,62 @@ def version() -> None:
     typer.echo(f"os={env.os}")
     typer.echo(f"machine={env.machine}")
     typer.echo(f"utc_now={env.utc_now}")
+
+
+@app.command("oneshot")
+def oneshot(
+    interval: int = typer.Option(
+        0,
+        help="Unused in oneshot (reserved for parity with daemon mode).",
+    ),
+    spool_path: str = typer.Option(
+        "spool/node_reports.jsonl",
+        help="Path to JSONL spool file for report emission.",
+    ),
+    no_stdout: bool = typer.Option(
+        False,
+        "--no-stdout",
+        help="Disable printing the report JSON to stdout.",
+    ),
+) -> None:
+    """
+    Emit single report and exit
+
+    This is a deterministic harness for validating:
+    - collectors work
+    - schema assembly works
+    - JSON serialization works
+    - emission to spool works
+
+    Failure semantics:
+    - if emission fails, Typer will raise and exit non-zero (good for ops scripts)
+    """
+    # Collect signals (Phase 1B)
+    ident = collect_identity()
+    hb = collect_heartbeat()
+
+    # For oneshot, we keep seq simple (1). Persistent seq comes in Phase 1D.
+    # emitted_at uses the runtime helper once we wire it; for now reuse Env timestamp logic
+    from agent.model import utc_now_iso  # local import avoids circular patterns
+
+    report = build_report_from_collectors(
+        ident,
+        hb,
+        emitted_at=utc_now_iso(),
+        seq=1,
+        agent_version=AGENT_VERSION,
+    )
+
+    # Convert to deterministic JSON string (single object)
+    report_json = report_to_json(report)
+
+    # Emit to stdout and spool
+    targets = EmitTargets(
+        spool_path=Path(spool_path),
+        emit_stdout=not no_stdout,
+    )
+    emit_report_json(report_json, targets)
+
 
 
 if __name__ == "__main__":
