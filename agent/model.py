@@ -217,3 +217,39 @@ def demo_report_json() -> str:
     # never serialize invalid objects.
     validate_report(report)
     return report_to_json(report)
+
+
+from agent.collectors.heartbeat import HeartbeatResult
+from agent.collectors.identity import IdentityResult
+
+def build_report_from_collectors(
+    identity: IdentityResult,
+    heartbeat: HeartbeatResult,
+    *,
+    emitted_at: str,
+    seq: int,
+    agent_version: str,
+) -> HealthReport:
+    """
+    Assemble a HealthReport from collector results
+
+    Why this exists:
+    - Separates collection (side effects) from schema assembly (pure)
+    - Makes unit testing easy: pass in mocked collector outputs
+
+    Phase 1B behavior:
+    - health always "OK"
+    - reasons empty
+    """
+    report = HealthReport(
+        identity=Identity(node_id=identity.node_id, boot_id=identity.boot_id),
+        timing=Timing(emitted_at=emitted_at, seq=seq),
+        signals={
+            # Signals where outputs flattened into stable schema
+            "heartbeat_ok": heartbeat.heartbeat_ok,
+        },
+        assessment=Assessment(health="OK", reasons=[]),
+        meta=Meta(schema_version=SCHEMA_VERSION, agent_version=agent_version),
+    )
+    validate_report(report)
+    return report
