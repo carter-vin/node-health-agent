@@ -35,3 +35,9 @@ This project focuses on operationally realistic system monitoring: deterministic
 - schema_version: "1"
 - UTC timestamps
 - Deterministic JSON envelope
+
+## Data Handling / Security Notes
+
+- The agent writes runtime artifacts to `./spool/` and `./state/`. These directories are intentionally excluded from git.
+- Reports may include host-identifying metadata (node_id, timestamps). Treat emitted reports as potentially sensitive in real environments.
+- For simulations or deployments, set `NODE_AGENT_NODE_ID` to control node identity explicitly.
