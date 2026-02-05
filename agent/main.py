@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import platform
 import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,7 +28,8 @@ from agent.collectors.heartbeat import collect_heartbeat
 from agent.collectors.identity import collect_identity
 from agent.emit import EmitTargets, emit_report_json
 from agent.model import build_report_from_collectors, report_to_json
-
+from agent.logging import emit_event
+from agent.state import commit_seq_after_emit, get_seq_for_boot
 
 # Explicit multi-command CLI
 app = typer.Typer(
@@ -133,31 +135,159 @@ def oneshot(
     Failure semantics:
     - if emission fails, Typer will raise and exit non-zero (good for ops scripts)
     """
-    # Collect signals (Phase 1B)
-    ident = collect_identity()
-    hb = collect_heartbeat()
 
-    # For oneshot, we keep seq simple (1). Persistent seq comes in Phase 1D.
-    # emitted_at uses the runtime helper once we wire it; for now reuse Env timestamp logic
-    from agent.model import utc_now_iso  # local import avoids circular patterns
-
-    report = build_report_from_collectors(
-        ident,
-        hb,
-        emitted_at=utc_now_iso(),
-        seq=1,
+    emit_event(
+        "agent_start",
         agent_version=AGENT_VERSION,
+        mode="oneshot",
+        spool_path=spool_path,
     )
 
-    # Convert to deterministic JSON string (single object)
-    report_json = report_to_json(report)
+    try:
+        # Collect signals (Phase 1B)
+        ident = collect_identity()
+        seq = get_seq_for_boot(ident.boot_id)
+        hb = collect_heartbeat()
 
-    # Emit to stdout and spool
+        from agent.model import utc_now_iso  # local import avoids circular patterns
+
+        report = build_report_from_collectors(
+            ident,
+            hb,
+            emitted_at=utc_now_iso(),
+            seq=seq,
+            agent_version=AGENT_VERSION,
+        )
+
+        report_json = report_to_json(report)
+
+        targets = EmitTargets(
+            spool_path=Path(spool_path),
+            emit_stdout=not no_stdout,
+        )
+
+        emit_report_json(report_json, targets)
+        commit_seq_after_emit(ident.boot_id, seq)
+
+        emit_event(
+            "health_report_emitted",
+            agent_version=AGENT_VERSION,
+            mode="oneshot",
+            seq=seq,
+            spool_path=str(targets.spool_path),
+            bytes=len(report_json),
+        )
+
+    except Exception as e:
+        # Collector vs spool distinction can be improved later.
+        # For now, surface the failure explicitly in a stable event.
+        emit_event(
+            "collector_failed",
+            agent_version=AGENT_VERSION,
+            mode="oneshot",
+            error_type=type(e).__name__,
+            message=str(e),
+        )
+        raise
+
+    finally:
+        emit_event(
+            "agent_shutdown",
+            agent_version=AGENT_VERSION,
+            mode="oneshot",
+        )
+     
+# run command if invoked directly
+@app.command("run")
+def run(
+    interval: int = typer.Option(
+        2,
+        help="Emit health reports at a fixed interval (seconds).",
+        min=1,
+    ),
+    spool_path: str = typer.Option(
+        "spool/node_reports.jsonl",
+        help="Path to JSONL spool file for report emission.",
+    ),
+    no_stdout: bool = typer.Option(
+        False,
+        "--no-stdout",
+        help="Disable printing the report JSON to stdout.",
+    ),
+) -> None:
+    """
+    Run continuous agent loop.
+    """
+    emit_event(
+        "agent_start",
+        agent_version=AGENT_VERSION,
+        mode="run",
+        interval_s=interval,
+        spool_path=spool_path,
+    )
+
     targets = EmitTargets(
         spool_path=Path(spool_path),
         emit_stdout=not no_stdout,
     )
-    emit_report_json(report_json, targets)
+
+    try:
+        while True:
+            start = time.monotonic()
+
+            try:
+                ident = collect_identity()
+                seq = get_seq_for_boot(ident.boot_id)
+                hb = collect_heartbeat()
+
+                from agent.model import utc_now_iso
+
+                report = build_report_from_collectors(
+                    ident,
+                    hb,
+                    emitted_at=utc_now_iso(),
+                    seq=seq,
+                    agent_version=AGENT_VERSION,
+                )
+
+                report_json = report_to_json(report)
+                emit_report_json(report_json, targets)
+
+                emit_event(
+                    "health_report_emitted",
+                    agent_version=AGENT_VERSION,
+                    mode="run",
+                    seq=seq,
+                    spool_path=str(targets.spool_path),
+                    bytes=len(report_json),
+                )
+
+                commit_seq_after_emit(ident.boot_id, seq)
+
+            except Exception as e:
+                emit_event(
+                    "collector_failed",
+                    agent_version=AGENT_VERSION,
+                    mode="run",
+                    error_type=type(e).__name__,
+                    message=str(e),
+                )
+                # Keep running; failure visibility is the goal.
+
+            elapsed = time.monotonic() - start
+            sleep_s = max(0.0, interval - elapsed)
+            time.sleep(sleep_s)
+
+    except KeyboardInterrupt:
+        # Graceful shutdown on Ctrl+C
+        pass
+
+    finally:
+        emit_event(
+            "agent_shutdown",
+            agent_version=AGENT_VERSION,
+            mode="run",
+        )
 
 
 
