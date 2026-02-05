@@ -19,7 +19,11 @@ dependencies = [
 node-health-agent = "agent.main:app"
 
 [tool.setuptools]
-packages = ["agent"]
+package-dir = {"" = "."}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["agent*", "triage*"]
 
 [tool.ruff]
 line-length = 100
