@@ -24,12 +24,13 @@ from pathlib import Path
 
 import typer
 
-from agent.collectors.heartbeat import collect_heartbeat
+from agent.collectors.heartbeat import HeartbeatResult, collect_heartbeat
 from agent.collectors.identity import collect_identity
 from agent.emit import EmitTargets, emit_report_json
 from agent.model import build_report_from_collectors, report_to_json
 from agent.logging import emit_event
 from agent.state import commit_seq_after_emit, get_seq_for_boot
+from agent.collectors.base import run_collector
 
 # Explicit multi-command CLI
 app = typer.Typer(
@@ -143,20 +144,64 @@ def oneshot(
         spool_path=spool_path,
     )
 
+    spool_failed = False
+
+    def _on_spool_error(e: Exception, path: Path) -> None:
+        nonlocal spool_failed
+        spool_failed = True
+        emit_event(
+            "spool_write_failed",
+            agent_version=AGENT_VERSION,
+            mode="oneshot",
+            spool_path=str(path),
+            error_type=type(e).__name__,
+            message=str(e),
+        )
+
     try:
-        # Collect signals (Phase 1B)
-        ident = collect_identity()
-        seq = get_seq_for_boot(ident.boot_id)
-        hb = collect_heartbeat()
+        # Collect signals with normalization; reasons drive assessment.
+        ident_out = run_collector("identity", collect_identity)
+        hb_out = run_collector("heartbeat", collect_heartbeat)
+
+        reasons: list[str] = []
+
+        if not hb_out.ok:
+            emit_event(
+                "collector_failed",
+                agent_version=AGENT_VERSION,
+                mode="oneshot",
+                collector="heartbeat",
+                error_type=hb_out.error_type,
+                message=hb_out.error_message,
+            )
+            reasons.append("collector_failed:heartbeat")
+
+        if not ident_out.ok:
+            emit_event(
+                "collector_failed",
+                agent_version=AGENT_VERSION,
+                mode="oneshot",
+                collector="identity",
+                error_type=ident_out.error_type,
+                message=ident_out.error_message,
+            )
+            # Identity is required for the current report schema.
+            raise RuntimeError("identity collector failed; cannot emit report")
+
+        seq = get_seq_for_boot(ident_out.value.boot_id)
 
         from agent.model import utc_now_iso  # local import avoids circular patterns
 
+        health = "DEGRADED" if reasons else "OK"
+
         report = build_report_from_collectors(
-            ident,
-            hb,
+            ident_out.value,
+            hb_out.value if hb_out.ok else HeartbeatResult(heartbeat_ok=False),
             emitted_at=utc_now_iso(),
             seq=seq,
             agent_version=AGENT_VERSION,
+            health=health,
+            reasons=reasons,
         )
 
         report_json = report_to_json(report)
@@ -166,8 +211,8 @@ def oneshot(
             emit_stdout=not no_stdout,
         )
 
-        emit_report_json(report_json, targets)
-        commit_seq_after_emit(ident.boot_id, seq)
+        emit_report_json(report_json, targets, on_spool_error=_on_spool_error)
+        commit_seq_after_emit(ident_out.value.boot_id, seq)
 
         emit_event(
             "health_report_emitted",
@@ -181,6 +226,8 @@ def oneshot(
     except Exception as e:
         # Collector vs spool distinction can be improved later.
         # For now, surface the failure explicitly in a stable event.
+        if spool_failed:
+            raise
         emit_event(
             "collector_failed",
             agent_version=AGENT_VERSION,
@@ -231,38 +278,85 @@ def run(
         emit_stdout=not no_stdout,
     )
 
+    def _on_spool_error(e: Exception, path: Path) -> None:
+        emit_event(
+            "spool_write_failed",
+            agent_version=AGENT_VERSION,
+            mode="run",
+            spool_path=str(path),
+            error_type=type(e).__name__,
+            message=str(e),
+        )
+
     try:
         while True:
             start = time.monotonic()
 
             try:
-                ident = collect_identity()
-                seq = get_seq_for_boot(ident.boot_id)
-                hb = collect_heartbeat()
+                # Collect signals with normalization; reasons drive assessment.
+                ident_out = run_collector("identity", collect_identity)
+                hb_out = run_collector("heartbeat", collect_heartbeat)
+
+                reasons: list[str] = []
+
+                if not hb_out.ok:
+                    emit_event(
+                        "collector_failed",
+                        agent_version=AGENT_VERSION,
+                        mode="run",
+                        collector="heartbeat",
+                        error_type=hb_out.error_type,
+                        message=hb_out.error_message,
+                    )
+                    reasons.append("collector_failed:heartbeat")
+
+                if not ident_out.ok:
+                    emit_event(
+                        "collector_failed",
+                        agent_version=AGENT_VERSION,
+                        mode="run",
+                        collector="identity",
+                        error_type=ident_out.error_type,
+                        message=ident_out.error_message,
+                    )
+                    # Identity is required; skip emission and continue.
+                    raise RuntimeError("identity collector failed; skipping emit")
+
+                seq = get_seq_for_boot(ident_out.value.boot_id)
 
                 from agent.model import utc_now_iso
 
+                health = "DEGRADED" if reasons else "OK"
+
                 report = build_report_from_collectors(
-                    ident,
-                    hb,
+                    ident_out.value,
+                    hb_out.value if hb_out.ok else HeartbeatResult(heartbeat_ok=False),
                     emitted_at=utc_now_iso(),
                     seq=seq,
                     agent_version=AGENT_VERSION,
+                    health=health,
+                    reasons=reasons,
                 )
 
                 report_json = report_to_json(report)
-                emit_report_json(report_json, targets)
 
-                emit_event(
-                    "health_report_emitted",
-                    agent_version=AGENT_VERSION,
-                    mode="run",
-                    seq=seq,
-                    spool_path=str(targets.spool_path),
-                    bytes=len(report_json),
-                )
+                emit_ok = True
+                try:
+                    emit_report_json(report_json, targets, on_spool_error=_on_spool_error)
+                except Exception:
+                    emit_ok = False
 
-                commit_seq_after_emit(ident.boot_id, seq)
+                if emit_ok:
+                    emit_event(
+                        "health_report_emitted",
+                        agent_version=AGENT_VERSION,
+                        mode="run",
+                        seq=seq,
+                        spool_path=str(targets.spool_path),
+                        bytes=len(report_json),
+                    )
+
+                    commit_seq_after_emit(ident_out.value.boot_id, seq)
 
             except Exception as e:
                 emit_event(
@@ -288,6 +382,8 @@ def run(
             agent_version=AGENT_VERSION,
             mode="run",
         )
+
+
 
 
 

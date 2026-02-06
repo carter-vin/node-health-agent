@@ -12,9 +12,8 @@ Future extension:
 """
 
 from __future__ import annotations
-
 from dataclasses import dataclass
-
+import os
 
 @dataclass(frozen=True)
 class HeartbeatResult:
@@ -25,4 +24,9 @@ def collect_heartbeat() -> HeartbeatResult:
     """
     Return a simple heartbeat signal
     """
+    # added test: determine collector failure (validation)
+    if os.environ.get("HEARTBEAT_FAIL") == "1":
+        raise RuntimeError("Simulated heartbeat failure")
+
+
     return HeartbeatResult(heartbeat_ok=True)

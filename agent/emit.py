@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable, Optional
 
 
 DEFAULT_SPOOL_DIR = Path("spool")
@@ -58,7 +59,12 @@ def append_jsonl_line(spool_path: Path, line: str) -> None:
         f.write("\n")
         f.flush()  
 
-def emit_report_json(report_json: str, targets: EmitTargets) -> None:
+def emit_report_json(
+    report_json: str,
+    targets: EmitTargets,
+    *,
+    on_spool_error: Optional[Callable[[Exception, Path], None]] = None,
+) -> None:
     """
     Emit a report JSON string to configured targets.
 
@@ -70,7 +76,13 @@ def emit_report_json(report_json: str, targets: EmitTargets) -> None:
     - must be a single JSON object string (no trailing newline)
     """
     if targets.emit_stdout:
-        # stdout emission is primarily for local debugging and demos.
+        # Stdout emission is primarily for local debugging and demos.
         print(report_json)
 
-    append_jsonl_line(targets.spool_path, report_json)
+    try:
+        append_jsonl_line(targets.spool_path, report_json)
+    except Exception as e:
+        # Callback allows the caller to surface spool errors without coupling modules.
+        if on_spool_error is not None:
+            on_spool_error(e, targets.spool_path)
+        raise

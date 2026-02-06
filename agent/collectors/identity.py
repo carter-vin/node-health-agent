@@ -96,6 +96,14 @@ def collect_identity(state_dir: Path = DEFAULT_STATE_DIR) -> IdentityResult:
     - Linux: /proc boot_id
     - else: repo-local cached UUID in ./state/boot_id
     """
+
+    # --
+    # test hook: sim collector failure (validation)
+    if os.getenv("NODE_AGENT_FAIL_IDENTITY") == "1":
+        raise RuntimeError("Simulated identity collector failure")
+    # --
+
+
     # node_id selection: override first, then hostname
     node_id = os.getenv(NODE_ID_ENV)
     if not node_id:

@@ -88,10 +88,7 @@ class Meta:
     agent_version: str
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "schema_version": self.schema_version,
-            "agent_version": self.agent_version,
-        }
+        return {"schema_version": self.schema_version, "agent_version": self.agent_version,}
 
 @dataclass(frozen=True)
 class HealthReport:
@@ -229,27 +226,38 @@ def build_report_from_collectors(
     emitted_at: str,
     seq: int,
     agent_version: str,
+    health: str = "OK",
+    reasons: list[str] | None = None,
 ) -> HealthReport:
     """
     Assemble a HealthReport from collector results
-
-    Why this exists:
-    - Separates collection (side effects) from schema assembly (pure)
-    - Makes unit testing easy: pass in mocked collector outputs
-
-    Phase 1B behavior:
-    - health always "OK"
-    - reasons empty
     """
+    if reasons is None:
+        reasons = []
+
     report = HealthReport(
-        identity=Identity(node_id=identity.node_id, boot_id=identity.boot_id),
-        timing=Timing(emitted_at=emitted_at, seq=seq),
+        identity=Identity(
+            node_id=identity.node_id,
+            boot_id=identity.boot_id,
+        ),
+        timing=Timing(
+            emitted_at=emitted_at,
+            seq=seq,
+        ),
         signals={
-            # Signals where outputs flattened into stable schema
+            # heartbeat signal
             "heartbeat_ok": heartbeat.heartbeat_ok,
         },
-        assessment=Assessment(health="OK", reasons=[]),
-        meta=Meta(schema_version=SCHEMA_VERSION, agent_version=agent_version),
+        assessment=Assessment(
+            health=health,
+            reasons=reasons,
+        ),
+        meta=Meta(
+            schema_version=SCHEMA_VERSION,
+            agent_version=agent_version,
+        ),
     )
+
+    # validate before returning
     validate_report(report)
     return report
