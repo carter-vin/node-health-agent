@@ -60,6 +60,12 @@ node-health-agent version
 node-health-agent oneshot
 ```
 
+Print the report JSON to stdout (debug only):
+
+```bash
+node-health-agent oneshot --print-report
+```
+
 * **Run the continuous agent loop**
 
 ```bash
@@ -67,6 +73,8 @@ node-health-agent run --interval 2
 ```
 
   Emits health reports at a fixed interval (in seconds).
+
+Report JSON is not printed to stdout unless you opt in with `--print-report`.
 
 ---
 
@@ -88,6 +96,13 @@ These events are intended to be:
 * Stable across versions
 * Suitable for centralized aggregation and alerting
 
+### IO Contract
+
+* `stdout`: structured JSON events only
+* `spool`: report JSONL only
+
+To print report JSON to stdout, use `--print-report` explicitly.
+
 ---
 
 ## Health Report Format
@@ -102,6 +117,16 @@ Each emitted health report follows a deterministic JSON envelope.
 * Append-only emission (no in-place mutation)
 
 The schema is intentionally conservative to support long-term compatibility and offline analysis.
+
+### Signals (current)
+
+* `heartbeat_ok`
+* `loadavg_1m`, `loadavg_5m`, `loadavg_15m`
+* `cpu_count_logical`
+* `mem_total_bytes`, `mem_available_bytes`
+* `disk_total_bytes`, `disk_used_bytes`, `disk_free_bytes`
+
+Signals from failed collectors are omitted to avoid type ambiguity.
 
 ---
 
@@ -120,6 +145,38 @@ NODE_AGENT_NODE_ID=<explicit-node-id>
 ```
 
 This avoids accidental coupling to hostnames or transient identifiers.
+
+### Test Hooks
+
+These environment variables are test-only hooks used in CI and local validation:
+
+```bash
+NODE_AGENT_FAIL_HEARTBEAT=1
+NODE_AGENT_FAIL_IDENTITY=1
+```
+
+---
+
+## Triage (local CLI)
+
+The triage tool reads the spool and produces deterministic summaries:
+
+```bash
+node-health-triage tail --spool spool/node_reports.jsonl --n 50
+node-health-triage summarize --spool spool/node_reports.jsonl --tail 200
+```
+
+Output is plain text and intentionally stable for scripts and ops playbooks.
+
+---
+
+## Development
+
+Install dev tools (tests + ruff):
+
+```bash
+pip install -e '.[dev]'
+```
 
 ---
 
