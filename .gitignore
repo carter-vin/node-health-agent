@@ -170,6 +170,9 @@ cython_debug/
 # Ruff stuff:
 .ruff_cache/
 
+# macOS
+.DS_Store
+
 # PyPI configuration file
 .pypirc
 
@@ -180,6 +183,9 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
+# VS Code
+.vscode/
+
 # ----------------------------------------------------------------------
 # Runtime artifacts
 spool/
@@ -189,3 +195,6 @@ logs/
 *.sqlite
 *.sqlite3
 *.log
+
+# ----------------------------------------------------------------------
+UPDATE_SUMMARY.md
