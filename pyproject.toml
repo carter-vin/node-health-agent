@@ -18,10 +18,12 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    "ruff>=0.6.0",
 ]
 
 [project.scripts]
 node-health-agent = "agent.main:app"
+node-health-triage = "triage.cli:app"
 
 [tool.setuptools]
 package-dir = {"" = "."}
