@@ -15,6 +15,11 @@ dependencies = [
     "typer>=0.12.0",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
 [project.scripts]
 node-health-agent = "agent.main:app"
 
