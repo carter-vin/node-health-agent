@@ -24,10 +24,13 @@ from pathlib import Path
 
 import typer
 
-from agent.collectors.heartbeat import HeartbeatResult, collect_heartbeat
+from agent.collectors.cpu import collect_cpu
+from agent.collectors.disk import collect_disk
+from agent.collectors.heartbeat import collect_heartbeat
 from agent.collectors.identity import collect_identity
+from agent.collectors.memory import collect_memory
 from agent.emit import EmitTargets, emit_report_json
-from agent.model import build_report_from_collectors, report_to_json
+from agent.model import build_report_from_collectors, report_to_json, utc_now_iso
 from agent.logging import emit_event
 from agent.state import commit_seq_after_emit, get_seq_for_boot
 from agent.collectors.base import run_collector
@@ -39,6 +42,7 @@ app = typer.Typer(
 )
 
 AGENT_VERSION = "0.1.0"
+
 
 # -----------------------------
 # DATA CLASSES
@@ -59,7 +63,7 @@ class EnvironmentInfo:
 
 def collect_environment_info() -> EnvironmentInfo:
     """
-    Collect env details (deterministicly)
+    Collect env details deterministically
 
     Note:
     - utc_now intentionally dynamic to reflect current time
@@ -72,13 +76,14 @@ def collect_environment_info() -> EnvironmentInfo:
         utc_now=datetime.now(timezone.utc).isoformat(),
     )
 
+
 # -----------------------------
 # ROOT COMMAND BEHAVIOR
 # -----------------------------
 @app.callback(invoke_without_command=True)
 def main(ctx: typer.Context) -> None:
     """
-    Root command behavior.
+    Root command behavior
 
     If no subcommand is provided:
     - print a short hint
@@ -98,9 +103,9 @@ def version() -> None:
     """
     Print agent version & runtime env
     """
-    env = collect_environment_info() 
+    env = collect_environment_info()
 
-    #set/print version & env details
+    # Set version and runtime details
     typer.echo(f"node-health-agent v{AGENT_VERSION}")
     typer.echo(f"python={env.python_version}")
     typer.echo(f"os={env.os}")
@@ -118,10 +123,10 @@ def oneshot(
         "spool/node_reports.jsonl",
         help="Path to JSONL spool file for report emission.",
     ),
-    no_stdout: bool = typer.Option(
+    print_report: bool = typer.Option(
         False,
-        "--no-stdout",
-        help="Disable printing the report JSON to stdout.",
+        "--print-report/--no-print-report",
+        help="Print report JSON to stdout for debugging.",
     ),
 ) -> None:
     """
@@ -134,7 +139,7 @@ def oneshot(
     - emission to spool works
 
     Failure semantics:
-    - if emission fails, Typer will raise and exit non-zero (good for ops scripts)
+    - Emission failures raise and exit non-zero
     """
 
     emit_event(
@@ -144,6 +149,7 @@ def oneshot(
         spool_path=spool_path,
     )
 
+    handled_failure = False
     spool_failed = False
 
     def _on_spool_error(e: Exception, path: Path) -> None:
@@ -159,9 +165,12 @@ def oneshot(
         )
 
     try:
-        # Collect signals with normalization; reasons drive assessment.
+        # Collect signals with normalization; reasons drive assessment
         ident_out = run_collector("identity", collect_identity)
         hb_out = run_collector("heartbeat", collect_heartbeat)
+        cpu_out = run_collector("cpu", collect_cpu)
+        mem_out = run_collector("memory", collect_memory)
+        disk_out = run_collector("disk", collect_disk)
 
         reasons: list[str] = []
 
@@ -176,6 +185,39 @@ def oneshot(
             )
             reasons.append("collector_failed:heartbeat")
 
+        if not cpu_out.ok:
+            emit_event(
+                "collector_failed",
+                agent_version=AGENT_VERSION,
+                mode="oneshot",
+                collector="cpu",
+                error_type=cpu_out.error_type,
+                message=cpu_out.error_message,
+            )
+            reasons.append("collector_failed:cpu")
+
+        if not mem_out.ok:
+            emit_event(
+                "collector_failed",
+                agent_version=AGENT_VERSION,
+                mode="oneshot",
+                collector="memory",
+                error_type=mem_out.error_type,
+                message=mem_out.error_message,
+            )
+            reasons.append("collector_failed:memory")
+
+        if not disk_out.ok:
+            emit_event(
+                "collector_failed",
+                agent_version=AGENT_VERSION,
+                mode="oneshot",
+                collector="disk",
+                error_type=disk_out.error_type,
+                message=disk_out.error_message,
+            )
+            reasons.append("collector_failed:disk")
+
         if not ident_out.ok:
             emit_event(
                 "collector_failed",
@@ -185,21 +227,23 @@ def oneshot(
                 error_type=ident_out.error_type,
                 message=ident_out.error_message,
             )
-            # Identity is required for the current report schema.
+            handled_failure = True
+            # Identity is required for the current report schema
             raise RuntimeError("identity collector failed; cannot emit report")
 
         seq = get_seq_for_boot(ident_out.value.boot_id)
-
-        from agent.model import utc_now_iso  # local import avoids circular patterns
 
         health = "DEGRADED" if reasons else "OK"
 
         report = build_report_from_collectors(
             ident_out.value,
-            hb_out.value if hb_out.ok else HeartbeatResult(heartbeat_ok=False),
             emitted_at=utc_now_iso(),
             seq=seq,
             agent_version=AGENT_VERSION,
+            heartbeat=hb_out.value if hb_out.ok else None,
+            cpu=cpu_out.value if cpu_out.ok else None,
+            memory=mem_out.value if mem_out.ok else None,
+            disk=disk_out.value if disk_out.ok else None,
             health=health,
             reasons=reasons,
         )
@@ -208,7 +252,7 @@ def oneshot(
 
         targets = EmitTargets(
             spool_path=Path(spool_path),
-            emit_stdout=not no_stdout,
+            emit_stdout=print_report,
         )
 
         emit_report_json(report_json, targets, on_spool_error=_on_spool_error)
@@ -224,9 +268,8 @@ def oneshot(
         )
 
     except Exception as e:
-        # Collector vs spool distinction can be improved later.
-        # For now, surface the failure explicitly in a stable event.
-        if spool_failed:
+        # Avoid double-emitting collector failures for known paths
+        if spool_failed or handled_failure:
             raise
         emit_event(
             "collector_failed",
@@ -243,7 +286,8 @@ def oneshot(
             agent_version=AGENT_VERSION,
             mode="oneshot",
         )
-     
+
+
 # run command if invoked directly
 @app.command("run")
 def run(
@@ -256,14 +300,14 @@ def run(
         "spool/node_reports.jsonl",
         help="Path to JSONL spool file for report emission.",
     ),
-    no_stdout: bool = typer.Option(
+    print_report: bool = typer.Option(
         False,
-        "--no-stdout",
-        help="Disable printing the report JSON to stdout.",
+        "--print-report/--no-print-report",
+        help="Print report JSON to stdout for debugging.",
     ),
 ) -> None:
     """
-    Run continuous agent loop.
+    Run continuous agent loop
     """
     emit_event(
         "agent_start",
@@ -275,7 +319,7 @@ def run(
 
     targets = EmitTargets(
         spool_path=Path(spool_path),
-        emit_stdout=not no_stdout,
+        emit_stdout=print_report,
     )
 
     def _on_spool_error(e: Exception, path: Path) -> None:
@@ -293,9 +337,12 @@ def run(
             start = time.monotonic()
 
             try:
-                # Collect signals with normalization; reasons drive assessment.
+                # Collect signals with normalization; reasons drive assessment
                 ident_out = run_collector("identity", collect_identity)
                 hb_out = run_collector("heartbeat", collect_heartbeat)
+                cpu_out = run_collector("cpu", collect_cpu)
+                mem_out = run_collector("memory", collect_memory)
+                disk_out = run_collector("disk", collect_disk)
 
                 reasons: list[str] = []
 
@@ -310,6 +357,39 @@ def run(
                     )
                     reasons.append("collector_failed:heartbeat")
 
+                if not cpu_out.ok:
+                    emit_event(
+                        "collector_failed",
+                        agent_version=AGENT_VERSION,
+                        mode="run",
+                        collector="cpu",
+                        error_type=cpu_out.error_type,
+                        message=cpu_out.error_message,
+                    )
+                    reasons.append("collector_failed:cpu")
+
+                if not mem_out.ok:
+                    emit_event(
+                        "collector_failed",
+                        agent_version=AGENT_VERSION,
+                        mode="run",
+                        collector="memory",
+                        error_type=mem_out.error_type,
+                        message=mem_out.error_message,
+                    )
+                    reasons.append("collector_failed:memory")
+
+                if not disk_out.ok:
+                    emit_event(
+                        "collector_failed",
+                        agent_version=AGENT_VERSION,
+                        mode="run",
+                        collector="disk",
+                        error_type=disk_out.error_type,
+                        message=disk_out.error_message,
+                    )
+                    reasons.append("collector_failed:disk")
+
                 if not ident_out.ok:
                     emit_event(
                         "collector_failed",
@@ -319,44 +399,48 @@ def run(
                         error_type=ident_out.error_type,
                         message=ident_out.error_message,
                     )
-                    # Identity is required; skip emission and continue.
-                    raise RuntimeError("identity collector failed; skipping emit")
+                    # Identity is required; skip this tick but keep running
+                    skip_emit = True
+                else:
+                    skip_emit = False
 
-                seq = get_seq_for_boot(ident_out.value.boot_id)
+                if not skip_emit:
+                    seq = get_seq_for_boot(ident_out.value.boot_id)
 
-                from agent.model import utc_now_iso
+                    health = "DEGRADED" if reasons else "OK"
 
-                health = "DEGRADED" if reasons else "OK"
-
-                report = build_report_from_collectors(
-                    ident_out.value,
-                    hb_out.value if hb_out.ok else HeartbeatResult(heartbeat_ok=False),
-                    emitted_at=utc_now_iso(),
-                    seq=seq,
-                    agent_version=AGENT_VERSION,
-                    health=health,
-                    reasons=reasons,
-                )
-
-                report_json = report_to_json(report)
-
-                emit_ok = True
-                try:
-                    emit_report_json(report_json, targets, on_spool_error=_on_spool_error)
-                except Exception:
-                    emit_ok = False
-
-                if emit_ok:
-                    emit_event(
-                        "health_report_emitted",
-                        agent_version=AGENT_VERSION,
-                        mode="run",
+                    report = build_report_from_collectors(
+                        ident_out.value,
+                        emitted_at=utc_now_iso(),
                         seq=seq,
-                        spool_path=str(targets.spool_path),
-                        bytes=len(report_json),
+                        agent_version=AGENT_VERSION,
+                        heartbeat=hb_out.value if hb_out.ok else None,
+                        cpu=cpu_out.value if cpu_out.ok else None,
+                        memory=mem_out.value if mem_out.ok else None,
+                        disk=disk_out.value if disk_out.ok else None,
+                        health=health,
+                        reasons=reasons,
                     )
 
-                    commit_seq_after_emit(ident_out.value.boot_id, seq)
+                    report_json = report_to_json(report)
+
+                    emit_ok = True
+                    try:
+                        emit_report_json(report_json, targets, on_spool_error=_on_spool_error)
+                    except Exception:
+                        emit_ok = False
+
+                    if emit_ok:
+                        emit_event(
+                            "health_report_emitted",
+                            agent_version=AGENT_VERSION,
+                            mode="run",
+                            seq=seq,
+                            spool_path=str(targets.spool_path),
+                            bytes=len(report_json),
+                        )
+
+                        commit_seq_after_emit(ident_out.value.boot_id, seq)
 
             except Exception as e:
                 emit_event(
@@ -366,7 +450,7 @@ def run(
                     error_type=type(e).__name__,
                     message=str(e),
                 )
-                # Keep running; failure visibility is the goal.
+                # Keep running; failure visibility is the goal
 
             elapsed = time.monotonic() - start
             sleep_s = max(0.0, interval - elapsed)
@@ -382,9 +466,6 @@ def run(
             agent_version=AGENT_VERSION,
             mode="run",
         )
-
-
-
 
 
 if __name__ == "__main__":

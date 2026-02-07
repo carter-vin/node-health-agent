@@ -25,13 +25,15 @@ VALID_EVENT_TYPES = {
     "agent_shutdown",
 }
 
+
 # Time: current in UTC ISO 8601
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
+
 def emit_event(event_type: str, *, agent_version: str, **fields: Any) -> None:
     """
-    Emit structued event line to stdout
+    Emit structured event line to stdout
 
     Rules:
     - event_type in VALID_EVENT_TYPES
@@ -48,7 +50,7 @@ def emit_event(event_type: str, *, agent_version: str, **fields: Any) -> None:
         **fields,
     }
 
-    print( 
+    print(
         json.dumps(
             payload,
             sort_keys=True,
@@ -56,4 +58,3 @@ def emit_event(event_type: str, *, agent_version: str, **fields: Any) -> None:
             ensure_ascii=False,
         )
     )
-    
