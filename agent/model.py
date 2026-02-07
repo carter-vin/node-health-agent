@@ -18,14 +18,21 @@ from typing import Any
 
 import json
 
+from agent.collectors.cpu import CpuResult
+from agent.collectors.disk import DiskResult
+from agent.collectors.heartbeat import HeartbeatResult
+from agent.collectors.identity import IdentityResult
+from agent.collectors.memory import MemoryResult
+
 # Schema constants
 SCHEMA_VERSION = "1"
 
-# components
+
+# Components
 @dataclass(frozen=True)
 class Identity:
     """
-    tie report to specific node & boot
+    Tie report to specific node and boot
     - node_id: stable host identifier
     - boot_id: change on boot
     """
@@ -34,11 +41,12 @@ class Identity:
     boot_id: str
 
     def to_dict(self) -> dict[str, Any]:
-        # explicit key mapping -> stability
+        # Explicit key mapping for stability
         return {
             "node_id": self.node_id,
             "boot_id": self.boot_id,
         }
+
 
 @dataclass(frozen=True)
 class Timing:
@@ -58,10 +66,11 @@ class Timing:
             "seq": self.seq,
         }
 
+
 @dataclass(frozen=True)
 class Assessment:
     """
-    Health assesment (high-level)
+    Health assessment (high-level)
     - health: "OK" | "DEGRADED" | "UNHEALTHY"
     - reasons: deterministic -> stable ordering
     """
@@ -70,11 +79,12 @@ class Assessment:
     reasons: list[str]
 
     def to_dict(self) -> dict[str, Any]:
-        # enforce sorting for `reasons` -> stability
+        # Enforce sorting for `reasons` to keep outputs stable
         return {
             "health": self.health,
             "reasons": sorted(self.reasons),
         }
+
 
 @dataclass(frozen=True)
 class Meta:
@@ -88,7 +98,11 @@ class Meta:
     agent_version: str
 
     def to_dict(self) -> dict[str, Any]:
-        return {"schema_version": self.schema_version, "agent_version": self.agent_version,}
+        return {
+            "schema_version": self.schema_version,
+            "agent_version": self.agent_version,
+        }
+
 
 @dataclass(frozen=True)
 class HealthReport:
@@ -96,6 +110,7 @@ class HealthReport:
     Top-level report
     Designed to remain stable as signals expand
     """
+
     identity: Identity
     timing: Timing
     signals: dict[str, Any]
@@ -105,14 +120,14 @@ class HealthReport:
     def to_dict(self) -> dict[str, Any]:
         """
         Serialize to dict
-        
+
         - keys exactly as defined
         - child blocks nested & versioned via meta.schema_version
         """
         return {
             "identity": self.identity.to_dict(),
             "timing": self.timing.to_dict(),
-            "signals": dict(self.signals),  # shallow copy (defensive)
+            "signals": dict(self.signals),  # Shallow copy for safety
             "assessment": self.assessment.to_dict(),
             "meta": self.meta.to_dict(),
         }
@@ -141,7 +156,7 @@ def report_to_json(report: HealthReport) -> str:
     """
     payload = report.to_dict()
 
-    # add - stabilize key order iin nested dicts
+    # Stabilize key order in nested dicts
     return json.dumps(
         payload,
         sort_keys=True,
@@ -149,8 +164,10 @@ def report_to_json(report: HealthReport) -> str:
         ensure_ascii=False,
     )
 
-# Set valid resp check
+
+# Set valid response check
 VALID_HEALTH = {"OK", "DEGRADED", "UNHEALTHY"}
+
 
 def validate_report(report: HealthReport) -> None:
     """
@@ -201,7 +218,7 @@ def demo_report_json() -> str:
         identity=Identity(node_id="demo-node", boot_id="demo-boot"),
         timing=Timing(emitted_at="2026-01-01T00:00:00+00:00", seq=1),
         signals={
-            # Minimal placeholder signals 
+            # Minimal placeholder signals
             "heartbeat_ok": True,
         },
         assessment=Assessment(
@@ -211,21 +228,21 @@ def demo_report_json() -> str:
         meta=Meta(schema_version=SCHEMA_VERSION, agent_version="0.1.0"),
     )
 
-    # never serialize invalid objects.
+    # Never serialize invalid objects
     validate_report(report)
     return report_to_json(report)
 
 
-from agent.collectors.heartbeat import HeartbeatResult
-from agent.collectors.identity import IdentityResult
-
 def build_report_from_collectors(
     identity: IdentityResult,
-    heartbeat: HeartbeatResult,
     *,
     emitted_at: str,
     seq: int,
     agent_version: str,
+    heartbeat: HeartbeatResult | None = None,
+    cpu: CpuResult | None = None,
+    memory: MemoryResult | None = None,
+    disk: DiskResult | None = None,
     health: str = "OK",
     reasons: list[str] | None = None,
 ) -> HealthReport:
@@ -234,6 +251,32 @@ def build_report_from_collectors(
     """
     if reasons is None:
         reasons = []
+
+    signals: dict[str, Any] = {}
+
+    if heartbeat is not None:
+        signals["heartbeat_ok"] = heartbeat.heartbeat_ok
+
+    if cpu is not None:
+        if cpu.loadavg_1m is not None:
+            signals["loadavg_1m"] = cpu.loadavg_1m
+        if cpu.loadavg_5m is not None:
+            signals["loadavg_5m"] = cpu.loadavg_5m
+        if cpu.loadavg_15m is not None:
+            signals["loadavg_15m"] = cpu.loadavg_15m
+        if cpu.cpu_count_logical is not None:
+            signals["cpu_count_logical"] = cpu.cpu_count_logical
+
+    if memory is not None:
+        if memory.mem_total_bytes is not None:
+            signals["mem_total_bytes"] = memory.mem_total_bytes
+        if memory.mem_available_bytes is not None:
+            signals["mem_available_bytes"] = memory.mem_available_bytes
+
+    if disk is not None:
+        signals["disk_total_bytes"] = disk.disk_total_bytes
+        signals["disk_used_bytes"] = disk.disk_used_bytes
+        signals["disk_free_bytes"] = disk.disk_free_bytes
 
     report = HealthReport(
         identity=Identity(
@@ -244,10 +287,7 @@ def build_report_from_collectors(
             emitted_at=emitted_at,
             seq=seq,
         ),
-        signals={
-            # heartbeat signal
-            "heartbeat_ok": heartbeat.heartbeat_ok,
-        },
+        signals=signals,
         assessment=Assessment(
             health=health,
             reasons=reasons,

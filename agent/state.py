@@ -43,6 +43,7 @@ class SeqState:
     next_seq:
     - next sequence number to emit (must be >= 1)
     """
+
     boot_id: str
     next_seq: int
 
@@ -145,7 +146,9 @@ def get_seq_for_boot(boot_id: str, *, state_dir: Path = DEFAULT_STATE_DIR) -> in
     return current.next_seq
 
 
-def commit_seq_after_emit(boot_id: str, emitted_seq: int, *, state_dir: Path = DEFAULT_STATE_DIR) -> None:
+def commit_seq_after_emit(
+    boot_id: str, emitted_seq: int, *, state_dir: Path = DEFAULT_STATE_DIR
+) -> None:
     """
     Commit seq state after a successful emission
 

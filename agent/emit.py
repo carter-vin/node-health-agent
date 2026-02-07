@@ -26,7 +26,6 @@ DEFAULT_SPOOL_DIR = Path("spool")
 DEFAULT_SPOOL_FILE = DEFAULT_SPOOL_DIR / "node_reports.jsonl"
 
 
-
 @dataclass(frozen=True)
 class EmitTargets:
     """
@@ -36,6 +35,7 @@ class EmitTargets:
     - it's explicit in call sites
     - it becomes easy to extend later (rotations, per-node files, etc.)
     """
+
     spool_path: Path = DEFAULT_SPOOL_FILE
     emit_stdout: bool = True
 
@@ -53,11 +53,12 @@ def append_jsonl_line(spool_path: Path, line: str) -> None:
     """
     spool_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Open in append mode; create if missing.
+    # Open in append mode; create if missing
     with spool_path.open(mode="a", encoding="utf-8", newline="\n") as f:
         f.write(line)
         f.write("\n")
-        f.flush()  
+        f.flush()
+
 
 def emit_report_json(
     report_json: str,
@@ -76,13 +77,13 @@ def emit_report_json(
     - must be a single JSON object string (no trailing newline)
     """
     if targets.emit_stdout:
-        # Stdout emission is primarily for local debugging and demos.
+        # Stdout emission is primarily for local debugging and demos
         print(report_json)
 
     try:
         append_jsonl_line(targets.spool_path, report_json)
     except Exception as e:
-        # Callback allows the caller to surface spool errors without coupling modules.
+        # Callback allows the caller to surface spool errors without coupling modules
         if on_spool_error is not None:
             on_spool_error(e, targets.spool_path)
         raise
