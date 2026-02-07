@@ -43,6 +43,7 @@ class IdentityResult:
     - collectors remain independent of schema specifics
     - we can attach error metadata if needed later
     """
+
     node_id: str
     boot_id: str
     source: str  # e.g., "env+hostname", "linux_proc", "dev_cache"
@@ -60,7 +61,7 @@ def _read_linux_boot_id() -> Optional[str]:
         if LINUX_BOOT_ID_PATH.exists():
             return LINUX_BOOT_ID_PATH.read_text(encoding="utf-8").strip()
     except Exception:
-        # We intentionally swallow errors here; collector errors must not crash agent.
+        # Swallow errors so collectors do not crash the agent
         return None
     return None
 
@@ -75,10 +76,10 @@ def _read_or_create_dev_boot_id(state_dir: Path) -> str:
     path = state_dir / DEV_BOOT_ID_FILE
 
     if path.exists():
-        # Use the stored ID to keep boot_id stable across runs until user deletes state.
+        # Keep boot_id stable across runs until state is removed
         return path.read_text(encoding="utf-8").strip()
 
-    # Create a new boot_id and persist it.
+    # Create a new boot_id and persist it
     new_id = str(uuid.uuid4())
     path.write_text(new_id + "\n", encoding="utf-8")
     return new_id
@@ -97,19 +98,16 @@ def collect_identity(state_dir: Path = DEFAULT_STATE_DIR) -> IdentityResult:
     - else: repo-local cached UUID in ./state/boot_id
     """
 
-    # --
-    # test hook: sim collector failure (validation)
+    # Test hook for validation
     if os.getenv("NODE_AGENT_FAIL_IDENTITY") == "1":
         raise RuntimeError("Simulated identity collector failure")
-    # --
 
-
-    # node_id selection: override first, then hostname
+    # Node_id selection: override first, then hostname
     node_id = os.getenv(NODE_ID_ENV)
     if not node_id:
         node_id = socket.gethostname()
 
-    # boot_id selection: Linux proc, else dev cache
+    # Boot_id selection: Linux proc, else dev cache
     boot_id = _read_linux_boot_id()
     if boot_id:
         return IdentityResult(node_id=node_id, boot_id=boot_id, source="linux_proc")

@@ -7,7 +7,8 @@ Light result wrapper -> prevent collector errors from crashing agent
 
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Any, Optional, Protocol
+from typing import Any, Optional
+
 
 @dataclass(frozen=True)
 class CollectorOutcome:
@@ -39,5 +40,3 @@ def run_collector(name: str, fn, *args, **kwargs) -> CollectorOutcome:
             error_type=type(e).__name__,
             error_message=str(e),
         )
-
-        
