@@ -21,10 +21,10 @@ def test_report_schema_keys_exist() -> None:
 
     report = build_report_from_collectors(
         ident,
-        hb,
         emitted_at="2026-01-01T00:00:00+00:00",
         seq=1,
         agent_version="0.1.0",
+        heartbeat=hb,
     )
 
     payload = report.to_dict()

@@ -1,34 +1,32 @@
 """
-Contract test for degraded assessment behavior on collector failure.
-
-This test mirrors the intended policy: a heartbeat failure marks the report
-as DEGRADED and records a deterministic reason string.
+Contract test for degraded assessment behavior on collector failure
 """
 
-from agent.collectors.heartbeat import HeartbeatResult
-from agent.collectors.identity import IdentityResult
-from agent.model import build_report_from_collectors
+import json
+from pathlib import Path
+
+from typer.testing import CliRunner
+
+from agent.main import app
 
 
 def test_heartbeat_failure_yields_degraded_reason() -> None:
     """
-    Heartbeat failure should set health to DEGRADED and add the reason tag.
+    Heartbeat failure should set health to DEGRADED and add the reason tag
     """
-    ident = IdentityResult(node_id="test-node", boot_id="test-boot", source="test")
-    hb = HeartbeatResult(heartbeat_ok=False)
+    runner = CliRunner()
 
-    report = build_report_from_collectors(
-        ident,
-        hb,
-        emitted_at="2026-01-01T00:00:00+00:00",
-        seq=1,
-        agent_version="0.1.0",
-        health="DEGRADED",
-        reasons=["collector_failed:heartbeat"],
-    )
+    with runner.isolated_filesystem():
+        result = runner.invoke(
+            app,
+            ["oneshot"],
+            env={"NODE_AGENT_FAIL_HEARTBEAT": "1"},
+        )
 
-    payload = report.to_dict()
+        assert result.exit_code == 0
 
-    assert payload["assessment"]["health"] == "DEGRADED"
-    assert payload["assessment"]["reasons"] == ["collector_failed:heartbeat"]
-    assert payload["signals"]["heartbeat_ok"] is False
+        lines = (Path("spool") / "node_reports.jsonl").read_text().splitlines()
+        report = json.loads(lines[-1])
+
+        assert report["assessment"]["health"] == "DEGRADED"
+        assert "collector_failed:heartbeat" in report["assessment"]["reasons"]
