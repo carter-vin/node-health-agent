@@ -251,6 +251,13 @@ def summarize_dir(
 
     for path in files:
         file_reports, invalid_count = tail_jsonl_with_stats(path, tail)
+        node_ids = {
+            report.get("identity", {}).get("node_id")
+            for report in file_reports
+            if report.get("identity", {}).get("node_id")
+        }
+        if len(node_ids) > 1:
+            raise typer.BadParameter("spool file contains multiple node_id values")
         reports.extend(file_reports)
         reports_invalid_total += invalid_count
 
