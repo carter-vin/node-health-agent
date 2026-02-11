@@ -85,6 +85,7 @@ The agent emits structured JSON log events with a minimal, stable event vocabula
 ### Required Event Types
 
 * `agent_start`
+* `agent_tick`
 * `health_report_emitted`
 * `collector_failed`
 * `spool_write_failed`
@@ -95,6 +96,17 @@ These events are intended to be:
 * Machine-parsable
 * Stable across versions
 * Suitable for centralized aggregation and alerting
+
+`agent_tick` includes per-loop timing fields:
+
+* `interval_s`
+* `tick_elapsed_ms`
+* `collect_elapsed_ms`
+* `emit_elapsed_ms` (only when a report is emitted)
+* `sleep_ms`
+* `overrun`
+* `seq` (only when a report is emitted)
+* `node_id` (only when identity is available)
 
 ### IO Contract
 
@@ -153,20 +165,71 @@ These environment variables are test-only hooks used in CI and local validation:
 ```bash
 NODE_AGENT_FAIL_HEARTBEAT=1
 NODE_AGENT_FAIL_IDENTITY=1
+NODE_AGENT_DEBUG_SLEEP_MS=1500
 ```
 
 ---
 
 ## Triage (local CLI)
 
-The triage tool reads the spool and produces deterministic summaries:
+The triage tool reads the spool and produces deterministic summaries per node:
 
 ```bash
 node-health-triage tail --spool spool/node_reports.jsonl --n 50
 node-health-triage summarize --spool spool/node_reports.jsonl --tail 200
 ```
 
-Output is plain text and intentionally stable for scripts and ops playbooks.
+Text output (per node) is stable and operator-friendly:
+
+```
+nodes_seen_tail: 2
+nodes_emitted: 2
+
+node_id: node-a
+current_boot_id: boot-1
+latest_health: OK
+latest_seq: 3
+latest_emitted_at: 2026-01-01T00:00:04+00:00
+degraded_count_tail: 1 / 3
+unhealthy_count_tail: 0 / 3
+top_reasons_tail: collector_failed:cpu:1, collector_failed:memory:1
+current_reasons: none
+
+node_id: node-b
+current_boot_id: boot-2
+latest_health: OK
+latest_seq: 2
+latest_emitted_at: 2026-01-01T00:00:03+00:00
+degraded_count_tail: 1 / 2
+unhealthy_count_tail: 0 / 2
+top_reasons_tail: collector_failed:disk:1
+current_reasons: none
+```
+
+JSON output is available for machine consumption:
+
+```bash
+node-health-triage summarize --spool spool/node_reports.jsonl --tail 200 --format json
+```
+
+Example jq usage:
+
+```bash
+# Show only degraded nodes
+node-health-triage summarize --spool spool/node_reports.jsonl --tail 200 --format json \
+  | jq '.nodes[] | select(.current_health == "DEGRADED")'
+
+# Sort by degraded_count_tail
+node-health-triage summarize --spool spool/node_reports.jsonl --tail 200 --format json \
+  | jq '.nodes | sort_by(.degraded_count_tail)'
+```
+
+Optional filters:
+
+```bash
+node-health-triage summarize --spool spool/node_reports.jsonl --node node-a
+node-health-triage summarize --spool spool/node_reports.jsonl --top-k-reasons 3
+```
 
 ---
 
