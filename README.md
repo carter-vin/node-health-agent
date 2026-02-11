@@ -74,6 +74,12 @@ node-health-agent run --interval 2
 
   Emits health reports at a fixed interval (in seconds).
 
+Optional spool rotation flags:
+
+```bash
+node-health-agent run --spool-max-bytes 1048576 --spool-rotate-count 3
+```
+
 Report JSON is not printed to stdout unless you opt in with `--print-report`.
 
 ---
@@ -102,11 +108,14 @@ These events are intended to be:
 * `interval_s`
 * `tick_elapsed_ms`
 * `collect_elapsed_ms`
+* `build_elapsed_ms` (only when a report is emitted)
 * `emit_elapsed_ms` (only when a report is emitted)
 * `sleep_ms`
 * `overrun`
+* `reports_emitted`
 * `seq` (only when a report is emitted)
 * `node_id` (only when identity is available)
+* `skip_emit` (only when emission is skipped)
 
 ### IO Contract
 
@@ -197,13 +206,13 @@ current_reasons: none
 
 node_id: node-b
 current_boot_id: boot-2
-latest_health: OK
+latest_health: DEGRADED
 latest_seq: 2
 latest_emitted_at: 2026-01-01T00:00:03+00:00
-degraded_count_tail: 1 / 2
+degraded_count_tail: 2 / 2
 unhealthy_count_tail: 0 / 2
-top_reasons_tail: collector_failed:disk:1
-current_reasons: none
+top_reasons_tail: collector_failed:disk:2, collector_failed:cpu:1
+current_reasons: collector_failed:cpu, collector_failed:disk
 ```
 
 JSON output is available for machine consumption:
@@ -229,7 +238,22 @@ Optional filters:
 ```bash
 node-health-triage summarize --spool spool/node_reports.jsonl --node node-a
 node-health-triage summarize --spool spool/node_reports.jsonl --top-k-reasons 3
+node-health-triage summarize --spool spool/node_reports.jsonl --only-degraded
+node-health-triage summarize --spool spool/node_reports.jsonl --only-unhealthy
+node-health-triage summarize --spool spool/node_reports.jsonl --min-degraded-count 2
 ```
+
+Directory mode (multiple spools):
+
+```bash
+node-health-triage summarize-dir --dir spool --glob "*.jsonl" --tail 200
+```
+
+Exit codes when health filters are used:
+
+* `0`: no matching nodes
+* `2`: degraded nodes exist
+* `3`: unhealthy nodes exist
 
 ---
 
