@@ -1,0 +1,2 @@
+{"assessment":{"health":"OK","reasons":[]},"identity":{"boot_id":"boot-a","node_id":"node-a"},"meta":{"agent_version":"0.1.0","schema_version":"1"},"signals":{"heartbeat_ok":true},"timing":{"emitted_at":"2026-01-01T00:00:00+00:00","seq":1}}
+{"assessment":{"health":"OK","reasons":[]},"identity":{"boot_id":"boot-a","node_id":"node-a"},"meta":{"agent_version":"0.1.0","schema_version":"1"},"signals":{"heartbeat_ok":true},"timing":{"emitted_at":"2026-01-01T00:00:01+00:00","seq":2}}
