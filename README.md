@@ -255,6 +255,8 @@ Directory mode (multiple spools):
 node-health-triage summarize-dir --dir spool --glob "*.jsonl" --tail 200
 ```
 
+summarize-dir expects each spool file to contain reports for a single node_id
+
 Exit codes when health filters are used:
 
 * `0`: no matching nodes

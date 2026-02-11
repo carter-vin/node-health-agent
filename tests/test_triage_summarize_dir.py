@@ -46,3 +46,26 @@ def test_triage_summarize_dir_json() -> None:
     assert nodes[0]["node_id"] == "node-a"
     assert nodes[1]["node_id"] == "node-b"
     assert nodes[1]["current_health"] == "DEGRADED"
+
+
+def test_triage_summarize_dir_rejects_multi_node_file() -> None:
+    """
+    summarize-dir rejects files with multiple node_id values
+    """
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "summarize-dir",
+            "--dir",
+            "fixtures",
+            "--glob",
+            "spool_mixed.jsonl",
+            "--tail",
+            "50",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "multiple node_id" in result.output

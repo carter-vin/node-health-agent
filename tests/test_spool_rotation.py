@@ -21,7 +21,11 @@ def test_spool_rotation_creates_rotated_files(tmp_path: Path) -> None:
         spool_rotate_count=2,
     )
 
-    emit_report_json("{}", targets)
+    rotation_info = emit_report_json("{}", targets)
+
+    assert rotation_info is not None
+    assert rotation_info["rotated_to"].endswith(".1.jsonl")
+    assert rotation_info["prior_size_bytes"] == 200
 
     rotated = tmp_path / "node_reports.1.jsonl"
     assert rotated.exists()
