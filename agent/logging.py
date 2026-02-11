@@ -19,11 +19,21 @@ from typing import Any
 # Event types
 VALID_EVENT_TYPES = {
     "agent_start",
+    "agent_tick",
     "health_report_emitted",
     "collector_failed",
     "spool_write_failed",
     "agent_shutdown",
 }
+
+
+def _truncate_message(value: str, *, limit: int = 200) -> str:
+    """
+    Cap message length to keep events compact
+    """
+    if len(value) <= limit:
+        return value
+    return value[:limit] + f"...[truncated {len(value) - limit} chars]"
 
 
 # Time: current in UTC ISO 8601
@@ -42,6 +52,10 @@ def emit_event(event_type: str, *, agent_version: str, **fields: Any) -> None:
     """
     if event_type not in VALID_EVENT_TYPES:
         raise ValueError(f"invalid event_type: {event_type}")
+
+    if "message" in fields and isinstance(fields["message"], str):
+        # Avoid emitting long strings in event fields
+        fields["message"] = _truncate_message(fields["message"])
 
     payload: dict[str, Any] = {
         "event_type": event_type,

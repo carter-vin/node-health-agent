@@ -15,6 +15,7 @@ Key contract:
 
 from __future__ import annotations
 
+import os
 import platform
 import sys
 import time
@@ -75,6 +76,20 @@ def collect_environment_info() -> EnvironmentInfo:
         machine=platform.machine(),
         utc_now=datetime.now(timezone.utc).isoformat(),
     )
+
+
+def _debug_sleep_ms() -> int:
+    """
+    Optional debug sleep to force overruns during tests
+    """
+    value = os.getenv("NODE_AGENT_DEBUG_SLEEP_MS")
+    if not value:
+        return 0
+    try:
+        delay_ms = int(value)
+    except ValueError:
+        return 0
+    return max(0, delay_ms)
 
 
 # -----------------------------
@@ -317,6 +332,8 @@ def run(
         spool_path=spool_path,
     )
 
+    debug_sleep_ms = _debug_sleep_ms()
+
     targets = EmitTargets(
         spool_path=Path(spool_path),
         emit_stdout=print_report,
@@ -334,7 +351,14 @@ def run(
 
     try:
         while True:
-            start = time.monotonic()
+            tick_start = time.monotonic()
+            collect_elapsed = None
+            build_elapsed = None
+            emit_elapsed = None
+            seq = None
+            node_id = None
+            skip_emit = False
+            reports_emitted = 0
 
             try:
                 # Collect signals with normalization; reasons drive assessment
@@ -343,6 +367,8 @@ def run(
                 cpu_out = run_collector("cpu", collect_cpu)
                 mem_out = run_collector("memory", collect_memory)
                 disk_out = run_collector("disk", collect_disk)
+
+                collect_elapsed = time.monotonic() - tick_start
 
                 reasons: list[str] = []
 
@@ -403,12 +429,14 @@ def run(
                     skip_emit = True
                 else:
                     skip_emit = False
+                    node_id = ident_out.value.node_id
 
                 if not skip_emit:
                     seq = get_seq_for_boot(ident_out.value.boot_id)
 
                     health = "DEGRADED" if reasons else "OK"
 
+                    build_start = time.monotonic()
                     report = build_report_from_collectors(
                         ident_out.value,
                         emitted_at=utc_now_iso(),
@@ -423,14 +451,18 @@ def run(
                     )
 
                     report_json = report_to_json(report)
+                    build_elapsed = time.monotonic() - build_start
 
                     emit_ok = True
+                    emit_start = time.monotonic()
                     try:
                         emit_report_json(report_json, targets, on_spool_error=_on_spool_error)
                     except Exception:
                         emit_ok = False
+                    emit_elapsed = time.monotonic() - emit_start
 
                     if emit_ok:
+                        reports_emitted = 1
                         emit_event(
                             "health_report_emitted",
                             agent_version=AGENT_VERSION,
@@ -452,9 +484,52 @@ def run(
                 )
                 # Keep running; failure visibility is the goal
 
-            elapsed = time.monotonic() - start
-            sleep_s = max(0.0, interval - elapsed)
-            time.sleep(sleep_s)
+            if collect_elapsed is None:
+                # Fallback if collectors threw before timing capture
+                collect_elapsed = time.monotonic() - tick_start
+
+            if debug_sleep_ms:
+                # Debug hook to force overruns in tests
+                time.sleep(debug_sleep_ms / 1000)
+
+            tick_elapsed = time.monotonic() - tick_start
+            overrun = tick_elapsed > interval
+            sleep_s = max(0.0, interval - tick_elapsed)
+            sleep_ms = max(0, int(round(sleep_s * 1000)))
+
+            tick_event = {
+                "interval_s": interval,
+                "tick_elapsed_ms": int(tick_elapsed * 1000),
+                "collect_elapsed_ms": int(collect_elapsed * 1000),
+                "sleep_ms": sleep_ms,
+                "overrun": overrun,
+                "reports_emitted": reports_emitted,
+            }
+
+            if build_elapsed is not None:
+                tick_event["build_elapsed_ms"] = int(build_elapsed * 1000)
+
+            if emit_elapsed is not None:
+                tick_event["emit_elapsed_ms"] = int(emit_elapsed * 1000)
+
+            if seq is not None:
+                tick_event["seq"] = seq
+
+            if node_id is not None:
+                tick_event["node_id"] = node_id
+
+            if skip_emit:
+                tick_event["skip_emit"] = True
+
+            emit_event(
+                "agent_tick",
+                agent_version=AGENT_VERSION,
+                mode="run",
+                **tick_event,
+            )
+
+            if sleep_ms:
+                time.sleep(sleep_ms / 1000)
 
     except KeyboardInterrupt:
         # Graceful shutdown on Ctrl+C
