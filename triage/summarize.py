@@ -222,7 +222,6 @@ def render_json(node_summaries: Iterable[NodeSummary], *, meta: dict) -> dict:
 
     meta_payload = {
         "schema_version": TRIAGE_SCHEMA_VERSION,
-        "spool_path": meta.get("spool_path"),
         "tail_n": meta.get("tail_n"),
         "nodes_seen_tail": meta.get("nodes_seen_tail", 0),
         "nodes_emitted": meta.get("nodes_emitted", 0),
@@ -230,6 +229,9 @@ def render_json(node_summaries: Iterable[NodeSummary], *, meta: dict) -> dict:
         "reports_invalid": meta.get("reports_invalid", 0),
         "computed_at": meta.get("computed_at"),
     }
+
+    if "spool_path" in meta and meta.get("spool_path") is not None:
+        meta_payload["spool_path"] = meta.get("spool_path")
 
     if "spool_dir" in meta:
         meta_payload["spool_dir"] = meta.get("spool_dir")

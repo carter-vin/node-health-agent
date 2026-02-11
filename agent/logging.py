@@ -23,6 +23,7 @@ VALID_EVENT_TYPES = {
     "health_report_emitted",
     "collector_failed",
     "spool_write_failed",
+    "spool_rotated",
     "agent_shutdown",
 }
 

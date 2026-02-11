@@ -174,6 +174,8 @@ def oneshot(
         agent_version=AGENT_VERSION,
         mode="oneshot",
         spool_path=spool_path,
+        spool_max_bytes=spool_max_bytes,
+        spool_rotate_count=spool_rotate_count,
     )
 
     handled_failure = False
@@ -189,6 +191,17 @@ def oneshot(
             spool_path=str(path),
             error_type=type(e).__name__,
             message=str(e),
+        )
+
+    def _on_spool_rotated(from_path: Path, to_path: Path) -> None:
+        emit_event(
+            "spool_rotated",
+            agent_version=AGENT_VERSION,
+            mode="oneshot",
+            spool_path=str(from_path),
+            rotated_to=str(to_path),
+            spool_max_bytes=spool_max_bytes,
+            spool_rotate_count=spool_rotate_count,
         )
 
     try:
@@ -284,7 +297,12 @@ def oneshot(
             spool_rotate_count=spool_rotate_count,
         )
 
-        emit_report_json(report_json, targets, on_spool_error=_on_spool_error)
+        emit_report_json(
+            report_json,
+            targets,
+            on_spool_error=_on_spool_error,
+            on_spool_rotated=_on_spool_rotated,
+        )
         commit_seq_after_emit(ident_out.value.boot_id, seq)
 
         emit_event(
@@ -356,6 +374,8 @@ def run(
         mode="run",
         interval_s=interval,
         spool_path=spool_path,
+        spool_max_bytes=spool_max_bytes,
+        spool_rotate_count=spool_rotate_count,
     )
 
     debug_sleep_ms = _debug_sleep_ms()
@@ -375,6 +395,17 @@ def run(
             spool_path=str(path),
             error_type=type(e).__name__,
             message=str(e),
+        )
+
+    def _on_spool_rotated(from_path: Path, to_path: Path) -> None:
+        emit_event(
+            "spool_rotated",
+            agent_version=AGENT_VERSION,
+            mode="run",
+            spool_path=str(from_path),
+            rotated_to=str(to_path),
+            spool_max_bytes=spool_max_bytes,
+            spool_rotate_count=spool_rotate_count,
         )
 
     try:
@@ -483,7 +514,12 @@ def run(
                     emit_ok = True
                     emit_start = time.monotonic()
                     try:
-                        emit_report_json(report_json, targets, on_spool_error=_on_spool_error)
+                        emit_report_json(
+                            report_json,
+                            targets,
+                            on_spool_error=_on_spool_error,
+                            on_spool_rotated=_on_spool_rotated,
+                        )
                     except Exception:
                         emit_ok = False
                     t_emit_done = time.monotonic()

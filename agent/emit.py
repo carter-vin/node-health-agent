@@ -37,7 +37,7 @@ class EmitTargets:
     """
 
     spool_path: Path = DEFAULT_SPOOL_FILE
-    emit_stdout: bool = True
+    emit_stdout: bool = False
     spool_max_bytes: int | None = None
     spool_rotate_count: int = 3
 
@@ -49,21 +49,21 @@ def _rotation_path(spool_path: Path, index: int) -> Path:
     return spool_path.with_name(f"{spool_path.stem}.{index}{spool_path.suffix}")
 
 
-def maybe_rotate_spool(targets: EmitTargets) -> None:
+def maybe_rotate_spool(targets: EmitTargets) -> Path | None:
     """
     Rotate spool file when it exceeds max size
     """
     if targets.spool_max_bytes is None or targets.spool_max_bytes <= 0:
-        return
+        return None
 
     if targets.spool_rotate_count < 1:
-        return
+        return None
 
     if not targets.spool_path.exists():
-        return
+        return None
 
     if targets.spool_path.stat().st_size < targets.spool_max_bytes:
-        return
+        return None
 
     # Rotate oldest first to keep shifts deterministic
     for index in range(targets.spool_rotate_count, 1, -1):
@@ -78,6 +78,7 @@ def maybe_rotate_spool(targets: EmitTargets) -> None:
     if first.exists():
         first.unlink()
     targets.spool_path.rename(first)
+    return first
 
 
 def append_jsonl_line(spool_path: Path, line: str) -> None:
@@ -105,6 +106,7 @@ def emit_report_json(
     targets: EmitTargets,
     *,
     on_spool_error: Optional[Callable[[Exception, Path], None]] = None,
+    on_spool_rotated: Optional[Callable[[Path, Path], None]] = None,
 ) -> None:
     """
     Emit a report JSON string to configured targets.
@@ -121,7 +123,9 @@ def emit_report_json(
         print(report_json)
 
     try:
-        maybe_rotate_spool(targets)
+        rotated_to = maybe_rotate_spool(targets)
+        if rotated_to is not None and on_spool_rotated is not None:
+            on_spool_rotated(targets.spool_path, rotated_to)
         append_jsonl_line(targets.spool_path, report_json)
     except Exception as e:
         # Callback allows the caller to surface spool errors without coupling modules

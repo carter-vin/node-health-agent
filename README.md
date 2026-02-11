@@ -95,6 +95,7 @@ The agent emits structured JSON log events with a minimal, stable event vocabula
 * `health_report_emitted`
 * `collector_failed`
 * `spool_write_failed`
+* `spool_rotated`
 * `agent_shutdown`
 
 These events are intended to be:
@@ -116,6 +117,11 @@ These events are intended to be:
 * `seq` (only when a report is emitted)
 * `node_id` (only when identity is available)
 * `skip_emit` (only when emission is skipped)
+
+`agent_start` includes optional spool rotation fields:
+
+* `spool_max_bytes`
+* `spool_rotate_count`
 
 ### IO Contract
 
