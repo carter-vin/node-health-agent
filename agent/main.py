@@ -138,6 +138,18 @@ def oneshot(
         "spool/node_reports.jsonl",
         help="Path to JSONL spool file for report emission.",
     ),
+    spool_max_bytes: int | None = typer.Option(
+        None,
+        "--spool-max-bytes",
+        help="Rotate spool when it reaches this size in bytes.",
+        min=1,
+    ),
+    spool_rotate_count: int = typer.Option(
+        3,
+        "--spool-rotate-count",
+        help="Number of rotated spool files to keep.",
+        min=1,
+    ),
     print_report: bool = typer.Option(
         False,
         "--print-report/--no-print-report",
@@ -268,6 +280,8 @@ def oneshot(
         targets = EmitTargets(
             spool_path=Path(spool_path),
             emit_stdout=print_report,
+            spool_max_bytes=spool_max_bytes,
+            spool_rotate_count=spool_rotate_count,
         )
 
         emit_report_json(report_json, targets, on_spool_error=_on_spool_error)
@@ -315,6 +329,18 @@ def run(
         "spool/node_reports.jsonl",
         help="Path to JSONL spool file for report emission.",
     ),
+    spool_max_bytes: int | None = typer.Option(
+        None,
+        "--spool-max-bytes",
+        help="Rotate spool when it reaches this size in bytes.",
+        min=1,
+    ),
+    spool_rotate_count: int = typer.Option(
+        3,
+        "--spool-rotate-count",
+        help="Number of rotated spool files to keep.",
+        min=1,
+    ),
     print_report: bool = typer.Option(
         False,
         "--print-report/--no-print-report",
@@ -337,6 +363,8 @@ def run(
     targets = EmitTargets(
         spool_path=Path(spool_path),
         emit_stdout=print_report,
+        spool_max_bytes=spool_max_bytes,
+        spool_rotate_count=spool_rotate_count,
     )
 
     def _on_spool_error(e: Exception, path: Path) -> None:
@@ -352,9 +380,9 @@ def run(
     try:
         while True:
             tick_start = time.monotonic()
-            collect_elapsed = None
-            build_elapsed = None
-            emit_elapsed = None
+            t_collect_done = None
+            t_build_done = None
+            t_emit_done = None
             seq = None
             node_id = None
             skip_emit = False
@@ -367,8 +395,6 @@ def run(
                 cpu_out = run_collector("cpu", collect_cpu)
                 mem_out = run_collector("memory", collect_memory)
                 disk_out = run_collector("disk", collect_disk)
-
-                collect_elapsed = time.monotonic() - tick_start
 
                 reasons: list[str] = []
 
@@ -431,12 +457,13 @@ def run(
                     skip_emit = False
                     node_id = ident_out.value.node_id
 
+                t_collect_done = time.monotonic()
+
                 if not skip_emit:
                     seq = get_seq_for_boot(ident_out.value.boot_id)
 
                     health = "DEGRADED" if reasons else "OK"
 
-                    build_start = time.monotonic()
                     report = build_report_from_collectors(
                         ident_out.value,
                         emitted_at=utc_now_iso(),
@@ -451,7 +478,7 @@ def run(
                     )
 
                     report_json = report_to_json(report)
-                    build_elapsed = time.monotonic() - build_start
+                    t_build_done = time.monotonic()
 
                     emit_ok = True
                     emit_start = time.monotonic()
@@ -459,7 +486,7 @@ def run(
                         emit_report_json(report_json, targets, on_spool_error=_on_spool_error)
                     except Exception:
                         emit_ok = False
-                    emit_elapsed = time.monotonic() - emit_start
+                    t_emit_done = time.monotonic()
 
                     if emit_ok:
                         reports_emitted = 1
@@ -484,9 +511,9 @@ def run(
                 )
                 # Keep running; failure visibility is the goal
 
-            if collect_elapsed is None:
+            if t_collect_done is None:
                 # Fallback if collectors threw before timing capture
-                collect_elapsed = time.monotonic() - tick_start
+                t_collect_done = time.monotonic()
 
             if debug_sleep_ms:
                 # Debug hook to force overruns in tests
@@ -497,20 +524,35 @@ def run(
             sleep_s = max(0.0, interval - tick_elapsed)
             sleep_ms = max(0, int(round(sleep_s * 1000)))
 
+            collect_elapsed_ms = None
+            build_elapsed_ms = None
+            emit_elapsed_ms = None
+
+            if t_collect_done is not None:
+                collect_elapsed_ms = int((t_collect_done - tick_start) * 1000)
+            else:
+                collect_elapsed_ms = 0
+
+            if t_build_done is not None and t_collect_done is not None:
+                build_elapsed_ms = int((t_build_done - t_collect_done) * 1000)
+
+            if t_emit_done is not None and t_build_done is not None:
+                emit_elapsed_ms = int((t_emit_done - t_build_done) * 1000)
+
             tick_event = {
                 "interval_s": interval,
                 "tick_elapsed_ms": int(tick_elapsed * 1000),
-                "collect_elapsed_ms": int(collect_elapsed * 1000),
+                "collect_elapsed_ms": collect_elapsed_ms,
                 "sleep_ms": sleep_ms,
                 "overrun": overrun,
                 "reports_emitted": reports_emitted,
             }
 
-            if build_elapsed is not None:
-                tick_event["build_elapsed_ms"] = int(build_elapsed * 1000)
+            if build_elapsed_ms is not None:
+                tick_event["build_elapsed_ms"] = build_elapsed_ms
 
-            if emit_elapsed is not None:
-                tick_event["emit_elapsed_ms"] = int(emit_elapsed * 1000)
+            if emit_elapsed_ms is not None:
+                tick_event["emit_elapsed_ms"] = emit_elapsed_ms
 
             if seq is not None:
                 tick_event["seq"] = seq

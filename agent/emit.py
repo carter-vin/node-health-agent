@@ -38,6 +38,46 @@ class EmitTargets:
 
     spool_path: Path = DEFAULT_SPOOL_FILE
     emit_stdout: bool = True
+    spool_max_bytes: int | None = None
+    spool_rotate_count: int = 3
+
+
+def _rotation_path(spool_path: Path, index: int) -> Path:
+    """
+    Build rotation path with numeric suffix
+    """
+    return spool_path.with_name(f"{spool_path.stem}.{index}{spool_path.suffix}")
+
+
+def maybe_rotate_spool(targets: EmitTargets) -> None:
+    """
+    Rotate spool file when it exceeds max size
+    """
+    if targets.spool_max_bytes is None or targets.spool_max_bytes <= 0:
+        return
+
+    if targets.spool_rotate_count < 1:
+        return
+
+    if not targets.spool_path.exists():
+        return
+
+    if targets.spool_path.stat().st_size < targets.spool_max_bytes:
+        return
+
+    # Rotate oldest first to keep shifts deterministic
+    for index in range(targets.spool_rotate_count, 1, -1):
+        src = _rotation_path(targets.spool_path, index - 1)
+        dst = _rotation_path(targets.spool_path, index)
+        if dst.exists():
+            dst.unlink()
+        if src.exists():
+            src.rename(dst)
+
+    first = _rotation_path(targets.spool_path, 1)
+    if first.exists():
+        first.unlink()
+    targets.spool_path.rename(first)
 
 
 def append_jsonl_line(spool_path: Path, line: str) -> None:
@@ -81,6 +121,7 @@ def emit_report_json(
         print(report_json)
 
     try:
+        maybe_rotate_spool(targets)
         append_jsonl_line(targets.spool_path, report_json)
     except Exception as e:
         # Callback allows the caller to surface spool errors without coupling modules
