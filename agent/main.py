@@ -193,16 +193,6 @@ def oneshot(
             message=str(e),
         )
 
-    def _on_spool_rotated(from_path: Path, to_path: Path) -> None:
-        emit_event(
-            "spool_rotated",
-            agent_version=AGENT_VERSION,
-            mode="oneshot",
-            spool_path=str(from_path),
-            rotated_to=str(to_path),
-            spool_max_bytes=spool_max_bytes,
-            spool_rotate_count=spool_rotate_count,
-        )
 
     try:
         # Collect signals with normalization; reasons drive assessment
@@ -297,12 +287,22 @@ def oneshot(
             spool_rotate_count=spool_rotate_count,
         )
 
-        emit_report_json(
+        rotation_info = emit_report_json(
             report_json,
             targets,
             on_spool_error=_on_spool_error,
-            on_spool_rotated=_on_spool_rotated,
         )
+        if rotation_info is not None:
+            emit_event(
+                "spool_rotated",
+                agent_version=AGENT_VERSION,
+                mode="oneshot",
+                spool_path=rotation_info["spool_path"],
+                rotated_to=rotation_info["rotated_to"],
+                prior_size_bytes=rotation_info["prior_size_bytes"],
+                spool_max_bytes=spool_max_bytes,
+                spool_rotate_count=spool_rotate_count,
+            )
         commit_seq_after_emit(ident_out.value.boot_id, seq)
 
         emit_event(
@@ -397,16 +397,6 @@ def run(
             message=str(e),
         )
 
-    def _on_spool_rotated(from_path: Path, to_path: Path) -> None:
-        emit_event(
-            "spool_rotated",
-            agent_version=AGENT_VERSION,
-            mode="run",
-            spool_path=str(from_path),
-            rotated_to=str(to_path),
-            spool_max_bytes=spool_max_bytes,
-            spool_rotate_count=spool_rotate_count,
-        )
 
     try:
         while True:
@@ -513,18 +503,29 @@ def run(
 
                     emit_ok = True
                     emit_start = time.monotonic()
+                    rotation_info = None
                     try:
-                        emit_report_json(
+                        rotation_info = emit_report_json(
                             report_json,
                             targets,
                             on_spool_error=_on_spool_error,
-                            on_spool_rotated=_on_spool_rotated,
                         )
                     except Exception:
                         emit_ok = False
                     t_emit_done = time.monotonic()
 
                     if emit_ok:
+                        if rotation_info is not None:
+                            emit_event(
+                                "spool_rotated",
+                                agent_version=AGENT_VERSION,
+                                mode="run",
+                                spool_path=rotation_info["spool_path"],
+                                rotated_to=rotation_info["rotated_to"],
+                                prior_size_bytes=rotation_info["prior_size_bytes"],
+                                spool_max_bytes=spool_max_bytes,
+                                spool_rotate_count=spool_rotate_count,
+                            )
                         reports_emitted = 1
                         emit_event(
                             "health_report_emitted",
