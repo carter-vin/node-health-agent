@@ -172,6 +172,8 @@ def render_text(node_summaries: Iterable[NodeSummary], *, meta: dict) -> str:
     lines: list[str] = [f"nodes_seen_tail: {meta.get('nodes_seen_tail', 0)}"]
     if "nodes_emitted" in meta:
         lines.append(f"nodes_emitted: {meta.get('nodes_emitted', 0)}")
+    if "files_seen" in meta:
+        lines.append(f"files_seen: {meta.get('files_seen', 0)}")
 
     if not summaries:
         return "\n".join(lines)
@@ -228,6 +230,13 @@ def render_json(node_summaries: Iterable[NodeSummary], *, meta: dict) -> dict:
         "reports_invalid": meta.get("reports_invalid", 0),
         "computed_at": meta.get("computed_at"),
     }
+
+    if "spool_dir" in meta:
+        meta_payload["spool_dir"] = meta.get("spool_dir")
+    if "files_seen" in meta:
+        meta_payload["files_seen"] = meta.get("files_seen")
+    if "reports_invalid_total" in meta:
+        meta_payload["reports_invalid_total"] = meta.get("reports_invalid_total")
 
     return {
         "meta": meta_payload,
