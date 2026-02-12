@@ -399,8 +399,14 @@ def run(
 
 
     try:
+        last_tick_start = None
         while True:
             tick_start = time.monotonic()
+            if last_tick_start is None:
+                sleep_drift_ms = 0
+            else:
+                expected = last_tick_start + interval
+                sleep_drift_ms = max(0, int((tick_start - expected) * 1000))
             t_collect_done = None
             t_build_done = None
             t_emit_done = None
@@ -408,14 +414,29 @@ def run(
             node_id = None
             skip_emit = False
             reports_emitted = 0
+            collector_durations: dict[str, int] = {}
 
             try:
                 # Collect signals with normalization; reasons drive assessment
+                collector_start = time.monotonic()
                 ident_out = run_collector("identity", collect_identity)
+                collector_durations["identity"] = int((time.monotonic() - collector_start) * 1000)
+
+                collector_start = time.monotonic()
                 hb_out = run_collector("heartbeat", collect_heartbeat)
+                collector_durations["heartbeat"] = int((time.monotonic() - collector_start) * 1000)
+
+                collector_start = time.monotonic()
                 cpu_out = run_collector("cpu", collect_cpu)
+                collector_durations["cpu"] = int((time.monotonic() - collector_start) * 1000)
+
+                collector_start = time.monotonic()
                 mem_out = run_collector("memory", collect_memory)
+                collector_durations["memory"] = int((time.monotonic() - collector_start) * 1000)
+
+                collector_start = time.monotonic()
                 disk_out = run_collector("disk", collect_disk)
+                collector_durations["disk"] = int((time.monotonic() - collector_start) * 1000)
 
                 reasons: list[str] = []
 
@@ -502,7 +523,6 @@ def run(
                     t_build_done = time.monotonic()
 
                     emit_ok = True
-                    emit_start = time.monotonic()
                     rotation_info = None
                     try:
                         rotation_info = emit_report_json(
@@ -606,6 +626,35 @@ def run(
                 mode="run",
                 **tick_event,
             )
+
+            collector_total_ms = sum(collector_durations.values())
+            slowest_collector_name = None
+            slowest_collector_ms = None
+            if collector_durations:
+                slowest_collector_name = max(collector_durations, key=collector_durations.get)
+                slowest_collector_ms = collector_durations[slowest_collector_name]
+
+            metrics_event = {
+                "interval_s": interval,
+                "tick_duration_ms": int(tick_elapsed * 1000),
+                "sleep_drift_ms": sleep_drift_ms,
+                "overrun": overrun,
+                "collector_total_ms": collector_total_ms,
+            }
+
+            if slowest_collector_name is not None:
+                metrics_event["slowest_collector_name"] = slowest_collector_name
+            if slowest_collector_ms is not None:
+                metrics_event["slowest_collector_ms"] = slowest_collector_ms
+
+            emit_event(
+                "agent_tick_metrics",
+                agent_version=AGENT_VERSION,
+                mode="run",
+                **metrics_event,
+            )
+
+            last_tick_start = tick_start
 
             if sleep_ms:
                 time.sleep(sleep_ms / 1000)

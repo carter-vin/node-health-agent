@@ -9,12 +9,11 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-
-import json
 import typer
 
 from triage.read import tail_jsonl, tail_jsonl_with_stats
-from triage.summarize import render_json, render_text, summarize_by_node, summarize_reports
+from triage.render import get_renderer
+from triage.summarize import summarize_by_node, summarize_reports
 
 
 app = typer.Typer(add_completion=False, help="node-health-triage: local triage tools")
@@ -113,6 +112,11 @@ def summarize(
         "--format",
         help="Output format: text or json.",
     ),
+    dual: bool = typer.Option(
+        False,
+        "--dual/--no-dual",
+        help="Print human output followed by JSON.",
+    ),
     node: str | None = typer.Option(
         None,
         "--node",
@@ -144,8 +148,8 @@ def summarize(
     Summarize the spool with deterministic per-node output
     """
     path = Path(spool)
-    if output_format not in {"text", "json"}:
-        raise typer.BadParameter("--format must be 'text' or 'json'")
+    if output_format not in {"text", "json", "pretty", "table", "explain"}:
+        raise typer.BadParameter("--format must be json, text, pretty, table, or explain")
 
     reports, invalid_count = tail_jsonl_with_stats(path, tail)
 
@@ -175,11 +179,16 @@ def summarize(
         "computed_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    if output_format == "json":
-        payload = render_json(summaries, meta=meta)
-        typer.echo(json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False))
+    if dual:
+        human_format = output_format if output_format != "json" else "pretty"
+        human_output = get_renderer(human_format).render(summaries, meta=meta)
+        json_output = get_renderer("json").render(summaries, meta=meta)
+        typer.echo(human_output)
+        typer.echo("")
+        typer.echo(json_output)
     else:
-        typer.echo(render_text(summaries, meta=meta))
+        renderer = get_renderer(output_format)
+        typer.echo(renderer.render(summaries, meta=meta))
 
     _maybe_exit_by_health(
         summaries=summaries,
@@ -209,6 +218,11 @@ def summarize_dir(
         "text",
         "--format",
         help="Output format: text or json.",
+    ),
+    dual: bool = typer.Option(
+        False,
+        "--dual/--no-dual",
+        help="Print human output followed by JSON.",
     ),
     node: str | None = typer.Option(
         None,
@@ -240,8 +254,8 @@ def summarize_dir(
     """
     Summarize a directory of spools with deterministic per-node output
     """
-    if output_format not in {"text", "json"}:
-        raise typer.BadParameter("--format must be 'text' or 'json'")
+    if output_format not in {"text", "json", "pretty", "table", "explain"}:
+        raise typer.BadParameter("--format must be json, text, pretty, table, or explain")
 
     root = Path(dir_path)
     files = sorted(root.glob(glob))
@@ -282,11 +296,16 @@ def summarize_dir(
         "computed_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    if output_format == "json":
-        payload = render_json(summaries, meta=meta)
-        typer.echo(json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False))
+    if dual:
+        human_format = output_format if output_format != "json" else "pretty"
+        human_output = get_renderer(human_format).render(summaries, meta=meta)
+        json_output = get_renderer("json").render(summaries, meta=meta)
+        typer.echo(human_output)
+        typer.echo("")
+        typer.echo(json_output)
     else:
-        typer.echo(render_text(summaries, meta=meta))
+        renderer = get_renderer(output_format)
+        typer.echo(renderer.render(summaries, meta=meta))
 
     _maybe_exit_by_health(
         summaries=summaries,

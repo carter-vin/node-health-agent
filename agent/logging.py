@@ -20,6 +20,7 @@ from typing import Any
 VALID_EVENT_TYPES = {
     "agent_start",
     "agent_tick",
+    "agent_tick_metrics",
     "health_report_emitted",
     "collector_failed",
     "spool_write_failed",

@@ -27,6 +27,14 @@ class NodeSummary:
     degraded_count_tail: int
     unhealthy_count_tail: int
     top_reasons_tail: list[dict[str, int | str]]
+    loadavg_1m: float | None
+    loadavg_5m: float | None
+    loadavg_15m: float | None
+    cpu_count_logical: int | None
+    mem_total_bytes: int | None
+    mem_available_bytes: int | None
+    disk_total_bytes: int | None
+    disk_free_bytes: int | None
 
     def to_dict(self) -> dict:
         return {
@@ -128,6 +136,7 @@ def summarize_by_node(
         identity = latest.get("identity", {})
         timing = latest.get("timing", {})
         assessment = latest.get("assessment", {})
+        signals = latest.get("signals", {})
 
         current_boot_id = identity.get("boot_id") or "unknown"
         latest_seq = _coerce_int(timing.get("seq"))
@@ -157,6 +166,14 @@ def summarize_by_node(
                 degraded_count_tail=acc["degraded"],
                 unhealthy_count_tail=acc["unhealthy"],
                 top_reasons_tail=top_reasons,
+                loadavg_1m=signals.get("loadavg_1m"),
+                loadavg_5m=signals.get("loadavg_5m"),
+                loadavg_15m=signals.get("loadavg_15m"),
+                cpu_count_logical=signals.get("cpu_count_logical"),
+                mem_total_bytes=signals.get("mem_total_bytes"),
+                mem_available_bytes=signals.get("mem_available_bytes"),
+                disk_total_bytes=signals.get("disk_total_bytes"),
+                disk_free_bytes=signals.get("disk_free_bytes"),
             )
         )
 
