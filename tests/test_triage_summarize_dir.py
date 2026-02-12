@@ -3,7 +3,6 @@ Contract test for triage summarize-dir
 """
 
 import json
-from pathlib import Path
 
 from typer.testing import CliRunner
 

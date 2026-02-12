@@ -31,5 +31,8 @@ def test_spool_rotation_creates_rotated_files(tmp_path: Path) -> None:
     assert rotated.exists()
     assert rotated.read_text(encoding="utf-8") == "x" * 200
 
+    rotated_two = tmp_path / "node_reports.2.jsonl"
+    assert not rotated_two.exists()
+
     current = spool_path.read_text(encoding="utf-8")
     assert current == "{}\n"

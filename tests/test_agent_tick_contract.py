@@ -67,3 +67,31 @@ def test_agent_tick_contract_optional_fields(capsys) -> None:
     assert isinstance(payload["seq"], int)
     assert isinstance(payload["node_id"], str)
     assert isinstance(payload["skip_emit"], bool)
+
+
+def test_agent_tick_metrics_contract(capsys) -> None:
+    """
+    agent_tick_metrics includes required diagnostic fields
+    """
+    emit_event(
+        "agent_tick_metrics",
+        agent_version="0.1.0",
+        mode="run",
+        tick_duration_ms=1000,
+        sleep_drift_ms=0,
+        overrun=False,
+        collector_total_ms=40,
+        slowest_collector_name="cpu",
+        slowest_collector_ms=20,
+    )
+
+    out = capsys.readouterr().out.strip()
+    payload = json.loads(out)
+
+    assert payload["event_type"] == "agent_tick_metrics"
+    assert isinstance(payload["tick_duration_ms"], int)
+    assert isinstance(payload["sleep_drift_ms"], int)
+    assert isinstance(payload["overrun"], bool)
+    assert isinstance(payload["collector_total_ms"], int)
+    assert isinstance(payload["slowest_collector_name"], str)
+    assert isinstance(payload["slowest_collector_ms"], int)
