@@ -92,15 +92,21 @@ class Meta:
     Metadata for versioning & traceability
     - schema_version: report schema version -> used for validate compatibility
     - agent_version: version string (later possible git sha)
+    - threshold_profile: name of the active threshold profile
+    - thresholds_hash: stable hash of the normalized threshold config
     """
 
     schema_version: str
     agent_version: str
+    threshold_profile: str = "default"
+    thresholds_hash: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "schema_version": self.schema_version,
             "agent_version": self.agent_version,
+            "schema_version": self.schema_version,
+            "threshold_profile": self.threshold_profile,
+            "thresholds_hash": self.thresholds_hash,
         }
 
 
@@ -244,6 +250,8 @@ def build_report_from_collectors(
     disk: DiskResult | None = None,
     health: str = "OK",
     reasons: list[str] | None = None,
+    threshold_profile: str = "default",
+    thresholds_hash: str = "",
 ) -> HealthReport:
     """
     Assemble a HealthReport from collector results
@@ -294,6 +302,8 @@ def build_report_from_collectors(
         meta=Meta(
             schema_version=SCHEMA_VERSION,
             agent_version=agent_version,
+            threshold_profile=threshold_profile,
+            thresholds_hash=thresholds_hash,
         ),
     )
 

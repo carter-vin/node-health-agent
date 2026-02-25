@@ -30,7 +30,9 @@ from agent.collectors.disk import collect_disk
 from agent.collectors.heartbeat import collect_heartbeat
 from agent.collectors.identity import collect_identity
 from agent.collectors.memory import collect_memory
+from agent.config import compute_config_hash, load_config
 from agent.emit import EmitTargets, emit_report_json
+from agent.evaluate import evaluate_health
 from agent.model import build_report_from_collectors, report_to_json, utc_now_iso
 from agent.logging import emit_event
 from agent.state import commit_seq_after_emit, get_seq_for_boot
@@ -155,6 +157,11 @@ def oneshot(
         "--print-report/--no-print-report",
         help="Print report JSON to stdout for debugging.",
     ),
+    config_path: str | None = typer.Option(
+        None,
+        "--config",
+        help="Path to JSON config file for threshold overrides.",
+    ),
 ) -> None:
     """
     Emit single report and exit
@@ -168,6 +175,10 @@ def oneshot(
     Failure semantics:
     - Emission failures raise and exit non-zero
     """
+
+    cfg = load_config(config_path)
+    cfg_hash = compute_config_hash(cfg)
+    cfg_profile = cfg.get("evaluation", {}).get("profile_name", "default")
 
     emit_event(
         "agent_start",
@@ -273,7 +284,13 @@ def oneshot(
 
         seq = get_seq_for_boot(ident_out.value.boot_id or "")
 
-        health = "DEGRADED" if reasons else "OK"
+        health, reasons = evaluate_health(
+            cpu_out.value if cpu_out.ok else None,
+            mem_out.value if mem_out.ok else None,
+            disk_out.value if disk_out.ok else None,
+            reasons,
+            config=cfg,
+        )
 
         report = build_report_from_collectors(
             ident_out.value,
@@ -286,6 +303,8 @@ def oneshot(
             disk=disk_out.value if disk_out.ok else None,
             health=health,
             reasons=reasons,
+            threshold_profile=cfg_profile,
+            thresholds_hash=cfg_hash,
         )
 
         report_json = report_to_json(report)
@@ -374,10 +393,19 @@ def run(
         "--print-report/--no-print-report",
         help="Print report JSON to stdout for debugging.",
     ),
+    config_path: str | None = typer.Option(
+        None,
+        "--config",
+        help="Path to JSON config file for threshold overrides.",
+    ),
 ) -> None:
     """
     Run continuous agent loop
     """
+    cfg = load_config(config_path)
+    cfg_hash = compute_config_hash(cfg)
+    cfg_profile = cfg.get("evaluation", {}).get("profile_name", "default")
+
     emit_event(
         "agent_start",
         agent_version=AGENT_VERSION,
@@ -524,7 +552,13 @@ def run(
                 if not skip_emit:
                     seq = get_seq_for_boot(ident_out.value.boot_id or "")
 
-                    health = "DEGRADED" if reasons else "OK"
+                    health, reasons = evaluate_health(
+                        cpu_out.value if cpu_out.ok else None,
+                        mem_out.value if mem_out.ok else None,
+                        disk_out.value if disk_out.ok else None,
+                        reasons,
+                        config=cfg,
+                    )
 
                     report = build_report_from_collectors(
                         ident_out.value,
@@ -537,6 +571,8 @@ def run(
                         disk=disk_out.value if disk_out.ok else None,
                         health=health,
                         reasons=reasons,
+                        threshold_profile=cfg_profile,
+                        thresholds_hash=cfg_hash,
                     )
 
                     report_json = report_to_json(report)
