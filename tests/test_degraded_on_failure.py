@@ -30,3 +30,4 @@ def test_heartbeat_failure_yields_degraded_reason() -> None:
 
         assert report["assessment"]["health"] == "DEGRADED"
         assert "collector_failed:heartbeat" in report["assessment"]["reasons"]
+        assert "heartbeat_ok" not in report["signals"]

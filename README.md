@@ -419,7 +419,6 @@ Thresholds are defined in `agent/evaluate.py` and can be tuned per-deployment.
     "reasons": ["collector_failed:heartbeat", "signal:mem_available_low"]
   },
   "signals": {
-    "heartbeat_ok": null,
     "loadavg_1m": 1.2,
     "cpu_count_logical": 8,
     "mem_available_bytes": 2147483648,
