@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "title": "node-health-agent stdout event",
+  "description": "Schema for structured JSON events emitted to stdout (one per line) by node-health-agent.",
+  "type": "object",
+  "required": ["agent_version", "event_type", "utc_now"],
+  "properties": {
+    "agent_version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Version string of the emitting agent."
+    },
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "agent_shutdown",
+        "agent_start",
+        "agent_tick",
+        "agent_tick_metrics",
+        "collector_failed",
+        "health_report_emitted",
+        "spool_rotated",
+        "spool_write_failed"
+      ],
+      "description": "Stable event type identifier."
+    },
+    "utc_now": {
+      "type": "string",
+      "description": "UTC RFC3339 timestamp when the event was emitted."
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["oneshot", "run"],
+      "description": "Agent operating mode."
+    },
+    "collector": {
+      "type": "string",
+      "description": "Collector name (collector_failed events)."
+    },
+    "error_type": {
+      "type": "string",
+      "description": "Exception type name (failure events)."
+    },
+    "message": {
+      "type": "string",
+      "description": "Human-readable error or status message."
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Report sequence number (agent_tick, health_report_emitted)."
+    },
+    "node_id": {
+      "type": "string",
+      "description": "Node identifier (agent_tick)."
+    },
+    "interval_s": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Configured loop interval in seconds (run mode events)."
+    },
+    "tick_elapsed_ms":   {"type": "integer", "minimum": 0},
+    "collect_elapsed_ms": {"type": "integer", "minimum": 0},
+    "build_elapsed_ms":  {"type": "integer", "minimum": 0},
+    "emit_elapsed_ms":   {"type": "integer", "minimum": 0},
+    "sleep_ms":          {"type": "integer", "minimum": 0},
+    "overrun":           {"type": "boolean"},
+    "reports_emitted":   {"type": "integer", "minimum": 0},
+    "spool_path":        {"type": "string"},
+    "spool_max_bytes":   {"type": ["integer", "null"]},
+    "spool_rotate_count": {"type": "integer", "minimum": 1},
+    "rotated_to":        {"type": "string"},
+    "prior_size_bytes":  {"type": "integer", "minimum": 0},
+    "bytes":             {"type": "integer", "minimum": 0}
+  }
+}

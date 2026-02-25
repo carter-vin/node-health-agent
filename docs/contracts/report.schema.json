@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "title": "node-health-agent health report v1",
+  "description": "Schema for health reports written to the spool JSONL file by node-health-agent.",
+  "type": "object",
+  "required": ["assessment", "identity", "meta", "signals", "timing"],
+  "properties": {
+    "assessment": {
+      "type": "object",
+      "required": ["health", "reasons"],
+      "properties": {
+        "health": {
+          "type": "string",
+          "enum": ["DEGRADED", "OK", "UNHEALTHY"],
+          "description": "Overall node health status."
+        },
+        "reasons": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Sorted list of reason tags driving the health assessment."
+        }
+      }
+    },
+    "identity": {
+      "type": "object",
+      "required": ["node_id"],
+      "properties": {
+        "node_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable node identifier (env override or hostname)."
+        },
+        "boot_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Boot-scoped identifier. Absent when unavailable (best-effort)."
+        }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "required": ["agent_version", "schema_version"],
+      "properties": {
+        "agent_version": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Version string of the emitting agent."
+        },
+        "schema_version": {
+          "type": "string",
+          "const": "1",
+          "description": "Report schema version. Must be '1' for v1 reports."
+        },
+        "threshold_profile": {
+          "type": "string",
+          "description": "Name of the active threshold profile."
+        },
+        "thresholds_hash": {
+          "type": "string",
+          "description": "16-char SHA-256 prefix of the normalized threshold config."
+        }
+      }
+    },
+    "signals": {
+      "type": "object",
+      "description": "Collected system signals. Keys are omitted when collector failed.",
+      "properties": {
+        "heartbeat_ok": {"type": "boolean"},
+        "loadavg_1m":   {"type": "number"},
+        "loadavg_5m":   {"type": "number"},
+        "loadavg_15m":  {"type": "number"},
+        "cpu_count_logical":    {"type": "integer", "minimum": 1},
+        "mem_total_bytes":      {"type": "integer", "minimum": 0},
+        "mem_available_bytes":  {"type": "integer", "minimum": 0},
+        "disk_total_bytes":     {"type": "integer", "minimum": 0},
+        "disk_used_bytes":      {"type": "integer", "minimum": 0},
+        "disk_free_bytes":      {"type": "integer", "minimum": 0}
+      }
+    },
+    "timing": {
+      "type": "object",
+      "required": ["emitted_at", "seq"],
+      "properties": {
+        "emitted_at": {
+          "type": "string",
+          "description": "UTC RFC3339 timestamp when the report was emitted."
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Monotonically increasing sequence number scoped to boot_id."
+        }
+      }
+    }
+  }
+}
