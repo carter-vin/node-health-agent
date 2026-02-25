@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import typer
 
-from triage.read import tail_jsonl, tail_jsonl_with_stats
+from triage.read import last_valid_report, tail_jsonl, tail_jsonl_with_stats
 from triage.render import get_renderer
 from triage.summarize import summarize_by_node, summarize_reports
 
@@ -63,6 +63,64 @@ def _maybe_exit_by_health(*, summaries, only_degraded: bool, only_unhealthy: boo
     if has_degraded:
         raise typer.Exit(code=2)
     raise typer.Exit(code=0)
+
+
+@app.command("status")
+def status(
+    spool: str = typer.Option(
+        "spool/node_reports.jsonl",
+        help="Path to JSONL spool file.",
+    ),
+    tail: int = typer.Option(
+        200,
+        "--tail",
+        help="Number of reports to search from the end.",
+    ),
+    output_format: str = typer.Option(
+        "text",
+        "--format",
+        help="Output format: text or json.",
+    ),
+) -> None:
+    """
+    Print the current status from the last valid report in the spool.
+
+    Exit code is always 0. Use summarize with --only-degraded / --only-unhealthy for filtering.
+    """
+    if output_format not in {"text", "json"}:
+        raise typer.BadParameter("--format must be text or json")
+
+    path = Path(spool)
+    if not path.exists():
+        typer.echo(f"error: spool not found: {spool}", err=True)
+        raise typer.Exit(code=1)
+
+    report = last_valid_report(path, tail)
+    if report is None:
+        typer.echo(f"error: no valid reports found in last {tail} lines of {spool}", err=True)
+        raise typer.Exit(code=1)
+
+    node_id = report["identity"]["node_id"]
+    health = report["assessment"]["health"]
+    seq = report["timing"]["seq"]
+    emitted_at = report["timing"]["emitted_at"]
+    reasons_list = report.get("assessment", {}).get("reasons", [])
+    reasons_str = ",".join(reasons_list) if reasons_list else "none"
+
+    if output_format == "json":
+        import json as _json
+        typer.echo(_json.dumps({
+            "node_id": node_id,
+            "health": health,
+            "seq": seq,
+            "emitted_at": emitted_at,
+            "reasons": reasons_list,
+        }, sort_keys=True, separators=(",", ":")))
+    else:
+        typer.echo(
+            f"node_id={node_id} health={health} seq={seq}"
+            f" emitted_at={emitted_at} reasons={reasons_str}"
+        )
 
 
 @app.command("tail")

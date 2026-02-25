@@ -108,3 +108,27 @@ def tail_jsonl(path: Path, n: int) -> list[dict[str, object]]:
     """
     reports, _ = tail_jsonl_with_stats(path, n)
     return reports
+
+
+def _is_valid_report(report: dict[str, object]) -> bool:
+    """
+    Check that a parsed report has the minimum required fields for status output.
+    """
+    node_id = report.get("identity", {}).get("node_id")
+    health = report.get("assessment", {}).get("health")
+    seq = report.get("timing", {}).get("seq")
+    emitted_at = report.get("timing", {}).get("emitted_at")
+    return bool(node_id and health and seq is not None and emitted_at)
+
+
+def last_valid_report(path: Path, n: int) -> dict[str, object] | None:
+    """
+    Return the last valid report from the tail window, or None if not found.
+
+    A valid report has: identity.node_id, assessment.health, timing.seq, timing.emitted_at.
+    """
+    reports = tail_jsonl(path, n)
+    for report in reversed(reports):
+        if _is_valid_report(report):
+            return report
+    return None

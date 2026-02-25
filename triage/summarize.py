@@ -35,6 +35,11 @@ class NodeSummary:
     mem_available_bytes: int | None
     disk_total_bytes: int | None
     disk_free_bytes: int | None
+    # Rolling-window stats (None when no records contain the signal)
+    max_cpu1_tail: float | None = None
+    min_mem_available_pct_tail: float | None = None
+    min_disk_free_pct_tail: float | None = None
+    health_transitions_tail: int = 0
 
     def to_dict(self) -> dict:
         return {
@@ -48,6 +53,10 @@ class NodeSummary:
             "degraded_count_tail": self.degraded_count_tail,
             "unhealthy_count_tail": self.unhealthy_count_tail,
             "top_reasons_tail": list(self.top_reasons_tail),
+            "max_cpu1_tail": self.max_cpu1_tail,
+            "min_mem_available_pct_tail": self.min_mem_available_pct_tail,
+            "min_disk_free_pct_tail": self.min_disk_free_pct_tail,
+            "health_transitions_tail": self.health_transitions_tail,
         }
 
 
@@ -107,6 +116,10 @@ def summarize_by_node(
                 "reason_counts": Counter(),
                 "latest_report": None,
                 "latest_key": None,
+                "cpu1_values": [],
+                "mem_pct_values": [],
+                "disk_pct_values": [],
+                "health_sequence": [],
             },
         )
 
@@ -120,8 +133,25 @@ def summarize_by_node(
         elif health == "UNHEALTHY":
             acc["unhealthy"] += 1
 
+        acc["health_sequence"].append(health)
+
         reasons = _normalize_reasons(assessment.get("reasons", []))
         acc["reason_counts"].update(reasons)
+
+        signals = report.get("signals", {})
+        loadavg_1m = signals.get("loadavg_1m")
+        if isinstance(loadavg_1m, (int, float)):
+            acc["cpu1_values"].append(float(loadavg_1m))
+
+        mem_avail = signals.get("mem_available_bytes")
+        mem_total = signals.get("mem_total_bytes")
+        if isinstance(mem_avail, (int, float)) and isinstance(mem_total, (int, float)) and mem_total > 0:
+            acc["mem_pct_values"].append((mem_avail / mem_total) * 100.0)
+
+        disk_free = signals.get("disk_free_bytes")
+        disk_total = signals.get("disk_total_bytes")
+        if isinstance(disk_free, (int, float)) and isinstance(disk_total, (int, float)) and disk_total > 0:
+            acc["disk_pct_values"].append((disk_free / disk_total) * 100.0)
 
         # Latest report wins by emitted_at then seq
         key = _ordering_key(report)
@@ -154,6 +184,18 @@ def summarize_by_node(
             {"reason": reason, "count": count} for reason, count in ordered_reasons
         ]
 
+        cpu1_vals = acc["cpu1_values"]
+        mem_pct_vals = acc["mem_pct_values"]
+        disk_pct_vals = acc["disk_pct_values"]
+        health_seq = acc["health_sequence"]
+
+        max_cpu1_tail = round(max(cpu1_vals), 2) if cpu1_vals else None
+        min_mem_available_pct_tail = round(min(mem_pct_vals), 2) if mem_pct_vals else None
+        min_disk_free_pct_tail = round(min(disk_pct_vals), 2) if disk_pct_vals else None
+        health_transitions_tail = sum(
+            1 for i in range(1, len(health_seq)) if health_seq[i] != health_seq[i - 1]
+        )
+
         summaries.append(
             NodeSummary(
                 node_id=node_id,
@@ -174,6 +216,10 @@ def summarize_by_node(
                 mem_available_bytes=signals.get("mem_available_bytes"),
                 disk_total_bytes=signals.get("disk_total_bytes"),
                 disk_free_bytes=signals.get("disk_free_bytes"),
+                max_cpu1_tail=max_cpu1_tail,
+                min_mem_available_pct_tail=min_mem_available_pct_tail,
+                min_disk_free_pct_tail=min_disk_free_pct_tail,
+                health_transitions_tail=health_transitions_tail,
             )
         )
 
@@ -227,6 +273,17 @@ def render_text(node_summaries: Iterable[NodeSummary], *, meta: dict) -> str:
             current_reasons = "none"
 
         lines.append(f"current_reasons: {current_reasons}")
+
+        def _fmt_load_stat(v: float | None) -> str:
+            return f"{v:.2f}" if v is not None else "n/a"
+
+        def _fmt_pct_stat(v: float | None) -> str:
+            return f"{v:.2f}%" if v is not None else "n/a"
+
+        lines.append(f"max_cpu1_tail: {_fmt_load_stat(summary.max_cpu1_tail)}")
+        lines.append(f"min_mem_available_pct_tail: {_fmt_pct_stat(summary.min_mem_available_pct_tail)}")
+        lines.append(f"min_disk_free_pct_tail: {_fmt_pct_stat(summary.min_disk_free_pct_tail)}")
+        lines.append(f"health_transitions_tail: {summary.health_transitions_tail}")
 
     return "\n".join(lines)
 

@@ -23,6 +23,7 @@ class TableRenderer(Renderer):
             "DISK_FREE",
             "DEG",
             "UNH",
+            "TRNS",
         ]
 
         rows = [headers]
@@ -36,6 +37,7 @@ class TableRenderer(Renderer):
                     format_gb_compact(summary.disk_free_bytes),
                     str(summary.degraded_count_tail),
                     str(summary.unhealthy_count_tail),
+                    str(summary.health_transitions_tail),
                 ]
             )
 

@@ -73,6 +73,14 @@ class ExplainRenderer(Renderer):
             blocks.append(
                 f"- Unhealthy: {summary.unhealthy_count_tail} / {summary.reports_seen_tail}"
             )
+            blocks.append(f"- Health transitions: {summary.health_transitions_tail}")
+
+            if summary.max_cpu1_tail is not None:
+                blocks.append(f"- Max CPU load (1m): {summary.max_cpu1_tail:.2f}")
+            if summary.min_mem_available_pct_tail is not None:
+                blocks.append(f"- Min memory available: {summary.min_mem_available_pct_tail:.2f}%")
+            if summary.min_disk_free_pct_tail is not None:
+                blocks.append(f"- Min disk free: {summary.min_disk_free_pct_tail:.2f}%")
 
             if summary.top_reasons_tail:
                 most_common = summary.top_reasons_tail[0]["reason"]
