@@ -258,10 +258,20 @@ def oneshot(
                 message=ident_out.error_message,
             )
             handled_failure = True
-            # Identity is required for the current report schema
+            # node_id unavailable — cannot emit report
             raise RuntimeError("identity collector failed; cannot emit report")
+        elif ident_out.value.boot_id is None:
+            emit_event(
+                "collector_failed",
+                agent_version=AGENT_VERSION,
+                mode="oneshot",
+                collector="identity",
+                error_type="RuntimeError",
+                message="boot_id unavailable",
+            )
+            reasons.append("collector_failed:identity")
 
-        seq = get_seq_for_boot(ident_out.value.boot_id)
+        seq = get_seq_for_boot(ident_out.value.boot_id or "")
 
         health = "DEGRADED" if reasons else "OK"
 
@@ -303,7 +313,7 @@ def oneshot(
                 spool_max_bytes=spool_max_bytes,
                 spool_rotate_count=spool_rotate_count,
             )
-        commit_seq_after_emit(ident_out.value.boot_id, seq)
+        commit_seq_after_emit(ident_out.value.boot_id or "", seq)
 
         emit_event(
             "health_report_emitted",
@@ -493,16 +503,26 @@ def run(
                         error_type=ident_out.error_type,
                         message=ident_out.error_message,
                     )
-                    # Identity is required; skip this tick but keep running
+                    # node_id unavailable; skip this tick but keep running
                     skip_emit = True
                 else:
-                    skip_emit = False
                     node_id = ident_out.value.node_id
+                    if ident_out.value.boot_id is None:
+                        emit_event(
+                            "collector_failed",
+                            agent_version=AGENT_VERSION,
+                            mode="run",
+                            collector="identity",
+                            error_type="RuntimeError",
+                            message="boot_id unavailable",
+                        )
+                        reasons.append("collector_failed:identity")
+                    skip_emit = False
 
                 t_collect_done = time.monotonic()
 
                 if not skip_emit:
-                    seq = get_seq_for_boot(ident_out.value.boot_id)
+                    seq = get_seq_for_boot(ident_out.value.boot_id or "")
 
                     health = "DEGRADED" if reasons else "OK"
 
@@ -556,7 +576,7 @@ def run(
                             bytes=len(report_json),
                         )
 
-                        commit_seq_after_emit(ident_out.value.boot_id, seq)
+                        commit_seq_after_emit(ident_out.value.boot_id or "", seq)
 
             except Exception as e:
                 emit_event(

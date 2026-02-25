@@ -33,19 +33,19 @@ SCHEMA_VERSION = "1"
 class Identity:
     """
     Tie report to specific node and boot
-    - node_id: stable host identifier
-    - boot_id: change on boot
+    - node_id: always present (env override > hostname)
+    - boot_id: best-effort; omitted when unavailable
     """
 
     node_id: str
-    boot_id: str
+    boot_id: str | None  # None when boot_id unavailable
 
     def to_dict(self) -> dict[str, Any]:
-        # Explicit key mapping for stability
-        return {
-            "node_id": self.node_id,
-            "boot_id": self.boot_id,
-        }
+        # Explicit key mapping for stability; boot_id omitted when unavailable
+        d: dict[str, Any] = {"node_id": self.node_id}
+        if self.boot_id is not None:
+            d["boot_id"] = self.boot_id
+        return d
 
 
 @dataclass(frozen=True)
@@ -180,8 +180,7 @@ def validate_report(report: HealthReport) -> None:
     # Identity checks
     if not report.identity.node_id:
         raise ValueError("identity.node_id is empty")
-    if not report.identity.boot_id:
-        raise ValueError("identity.boot_id is empty")
+    # boot_id is best-effort; None is valid (caller adds collector_failed:identity reason)
 
     # Timing checks
     if report.timing.seq < 1:
