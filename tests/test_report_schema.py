@@ -36,7 +36,9 @@ def test_report_schema_keys_exist() -> None:
     assert set(payload["identity"].keys()) == {"node_id", "boot_id"}
     assert set(payload["timing"].keys()) == {"emitted_at", "seq"}
     assert set(payload["assessment"].keys()) == {"health", "reasons"}
-    assert set(payload["meta"].keys()) == {"schema_version", "agent_version"}
+    assert set(payload["meta"].keys()) == {
+        "schema_version", "agent_version", "threshold_profile", "thresholds_hash"
+    }
 
     # Schema version must match the constant.
     assert payload["meta"]["schema_version"] == SCHEMA_VERSION
