@@ -5,6 +5,7 @@ from agent.collectors.disk import collect_disk
 from agent.collectors.heartbeat import collect_heartbeat
 from agent.collectors.identity import collect_identity
 from agent.collectors.memory import collect_memory
+from agent.collectors.network import collect_network
 
 __all__ = [
     "collect_cpu",
@@ -12,4 +13,5 @@ __all__ = [
     "collect_heartbeat",
     "collect_identity",
     "collect_memory",
+    "collect_network",
 ]

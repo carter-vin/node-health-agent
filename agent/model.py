@@ -23,6 +23,7 @@ from agent.collectors.disk import DiskResult
 from agent.collectors.heartbeat import HeartbeatResult
 from agent.collectors.identity import IdentityResult
 from agent.collectors.memory import MemoryResult
+from agent.collectors.network import NetworkResult
 
 # Schema constants
 SCHEMA_VERSION = "1"
@@ -248,6 +249,7 @@ def build_report_from_collectors(
     cpu: CpuResult | None = None,
     memory: MemoryResult | None = None,
     disk: DiskResult | None = None,
+    network: NetworkResult | None = None,
     health: str = "OK",
     reasons: list[str] | None = None,
     threshold_profile: str = "default",
@@ -284,6 +286,14 @@ def build_report_from_collectors(
         signals["disk_total_bytes"] = disk.disk_total_bytes
         signals["disk_used_bytes"] = disk.disk_used_bytes
         signals["disk_free_bytes"] = disk.disk_free_bytes
+
+    if network is not None:
+        if network.net_rx_bytes_total is not None:
+            signals["net_rx_bytes_total"] = network.net_rx_bytes_total
+        if network.net_tx_bytes_total is not None:
+            signals["net_tx_bytes_total"] = network.net_tx_bytes_total
+        if network.net_active_tcp_connections is not None:
+            signals["net_active_tcp_connections"] = network.net_active_tcp_connections
 
     report = HealthReport(
         identity=Identity(

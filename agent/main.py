@@ -30,6 +30,7 @@ from agent.collectors.disk import collect_disk
 from agent.collectors.heartbeat import collect_heartbeat
 from agent.collectors.identity import collect_identity
 from agent.collectors.memory import collect_memory
+from agent.collectors.network import collect_network
 from agent.config import compute_config_hash, load_config
 from agent.emit import EmitTargets, emit_report_json
 from agent.evaluate import evaluate_health
@@ -212,6 +213,7 @@ def oneshot(
         cpu_out = run_collector("cpu", collect_cpu)
         mem_out = run_collector("memory", collect_memory)
         disk_out = run_collector("disk", collect_disk)
+        net_out = run_collector("network", collect_network)
 
         reasons: list[str] = []
 
@@ -259,6 +261,17 @@ def oneshot(
             )
             reasons.append("collector_failed:disk")
 
+        if not net_out.ok:
+            emit_event(
+                "collector_failed",
+                agent_version=AGENT_VERSION,
+                mode="oneshot",
+                collector="network",
+                error_type=net_out.error_type,
+                message=net_out.error_message,
+            )
+            # network is best-effort; failure does not degrade health
+
         if not ident_out.ok:
             emit_event(
                 "collector_failed",
@@ -301,6 +314,7 @@ def oneshot(
             cpu=cpu_out.value if cpu_out.ok else None,
             memory=mem_out.value if mem_out.ok else None,
             disk=disk_out.value if disk_out.ok else None,
+            network=net_out.value if net_out.ok else None,
             health=health,
             reasons=reasons,
             threshold_profile=cfg_profile,
@@ -476,6 +490,10 @@ def run(
                 disk_out = run_collector("disk", collect_disk)
                 collector_durations["disk"] = int((time.monotonic() - collector_start) * 1000)
 
+                collector_start = time.monotonic()
+                net_out = run_collector("network", collect_network)
+                collector_durations["network"] = int((time.monotonic() - collector_start) * 1000)
+
                 reasons: list[str] = []
 
                 if not hb_out.ok:
@@ -569,6 +587,7 @@ def run(
                         cpu=cpu_out.value if cpu_out.ok else None,
                         memory=mem_out.value if mem_out.ok else None,
                         disk=disk_out.value if disk_out.ok else None,
+                        network=net_out.value if net_out.ok else None,
                         health=health,
                         reasons=reasons,
                         threshold_profile=cfg_profile,
@@ -725,6 +744,98 @@ def run(
             agent_version=AGENT_VERSION,
             mode="run",
         )
+
+
+@app.command("config")
+def config_cmd(
+    config_path: str | None = typer.Option(
+        None,
+        "--config",
+        help="Path to JSON config file for threshold overrides.",
+    ),
+    output_format: str = typer.Option(
+        "text",
+        "--format",
+        help="Output format: text or json.",
+    ),
+) -> None:
+    """
+    Print the fully-resolved effective configuration.
+
+    Shows each threshold value with its source (default, env, or file)
+    and validates that threshold coherence is maintained.
+    """
+    import json as _json
+
+    if output_format not in {"text", "json"}:
+        raise typer.BadParameter("--format must be text or json")
+
+    from agent.config import _DEFAULTS, _ENV_OVERRIDES
+
+    # Load with defaults only (no file, no env) to identify defaults
+    defaults_cfg = _DEFAULTS
+
+    # Load with file but no env to identify file overrides
+    file_cfg: dict[str, Any] = {}
+    if config_path:
+        try:
+            from agent.config import normalize_config as _normalize
+            import json as _j
+            payload = _j.loads(Path(config_path).read_text(encoding="utf-8"))
+            if isinstance(payload, dict):
+                file_cfg = _normalize(payload)
+        except Exception:
+            pass
+
+    # Final resolved config (defaults → file → env)
+    cfg = load_config(config_path)
+    cfg_hash = compute_config_hash(cfg)
+
+    # Determine source for each key
+    def _source(section: str, key: str) -> str:
+        env_var = next(
+            (e for e, (s, k, _) in _ENV_OVERRIDES.items() if s == section and k == key),
+            None,
+        )
+        if env_var and os.getenv(env_var) is not None:
+            return f"env: {env_var}"
+        if file_cfg and file_cfg.get(section, {}).get(key) != _DEFAULTS.get(section, {}).get(key):
+            return f"file: {config_path}"
+        return "default"
+
+    if output_format == "json":
+        payload: dict[str, Any] = {
+            "config_hash": cfg_hash,
+            "config_path": config_path,
+            "thresholds": {},
+        }
+        for section in ("cpu", "mem", "disk"):
+            for key, value in cfg[section].items():
+                fq_key = f"{section}.{key}"
+                payload["thresholds"][fq_key] = {
+                    "value": value,
+                    "source": _source(section, key),
+                }
+        payload["validation"] = "OK"
+        typer.echo(_json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False))
+        return
+
+    # Text output
+    lines: list[str] = [
+        f"config_hash: {cfg_hash}",
+        f"config_path: {config_path or 'none'}",
+        "",
+    ]
+
+    for section in ("cpu", "mem", "disk"):
+        for key, value in sorted(cfg[section].items()):
+            src = _source(section, key)
+            src_tag = f"  ({src})" if src != "default" else ""
+            lines.append(f"{section}.{key}: {value}{src_tag}")
+
+    lines.append("")
+    lines.append("validation: OK")
+    typer.echo("\n".join(lines))
 
 
 if __name__ == "__main__":
