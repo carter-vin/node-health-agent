@@ -7,6 +7,8 @@ Minimal triage CLI for local operator workflows
 
 from __future__ import annotations
 
+import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 import typer
@@ -142,11 +144,14 @@ def tail(
     reports = tail_jsonl(path, n)
 
     last_seq = None
+    last_health = None
     if reports:
         last_seq = reports[-1].get("timing", {}).get("seq")
+        last_health = reports[-1].get("assessment", {}).get("health")
 
     typer.echo(f"reports_parsed: {len(reports)}")
     typer.echo(f"last_seq: {last_seq if last_seq is not None else 'unknown'}")
+    typer.echo(f"last_health: {last_health if last_health is not None else 'unknown'}")
 
 
 @app.command("summarize")
@@ -370,6 +375,112 @@ def summarize_dir(
         only_degraded=only_degraded,
         only_unhealthy=only_unhealthy,
     )
+
+
+@app.command("watch")
+def watch(
+    spool: str | None = typer.Option(
+        None,
+        "--spool",
+        help="Path to JSONL spool file (single node).",
+    ),
+    dir_path: str | None = typer.Option(
+        None,
+        "--dir",
+        help="Directory containing spool files (fleet).",
+    ),
+    glob: str = typer.Option(
+        "*.jsonl",
+        "--glob",
+        help="Glob pattern for spool files (used with --dir).",
+    ),
+    output_format: str = typer.Option(
+        "pretty",
+        "--format",
+        help="Output format: text, pretty, table, or explain.",
+    ),
+    interval: int = typer.Option(
+        5,
+        "--interval",
+        help="Refresh interval in seconds.",
+        min=1,
+    ),
+    tail: int = typer.Option(
+        200,
+        "--tail",
+        help="Number of reports to summarize from the end.",
+    ),
+    top_k_reasons: int = typer.Option(
+        5,
+        "--top-k-reasons",
+        help="Maximum number of reasons to display per node.",
+    ),
+) -> None:
+    """
+    Live-refreshing terminal view of node or fleet health.
+
+    Clears and repaints the terminal at a fixed interval using ANSI
+    escape sequences. Press Ctrl+C to exit.
+    """
+    if output_format not in {"text", "pretty", "table", "explain"}:
+        raise typer.BadParameter("--format must be text, pretty, table, or explain")
+
+    if spool is None and dir_path is None:
+        raise typer.BadParameter("Provide --spool or --dir")
+
+    if spool and dir_path:
+        raise typer.BadParameter("--spool and --dir are mutually exclusive")
+
+    renderer = get_renderer(output_format)
+
+    def _build_output() -> str:
+        if spool:
+            path = Path(spool)
+            reports, invalid_count = tail_jsonl_with_stats(path, tail)
+            all_summaries = summarize_by_node(reports, top_k_reasons=top_k_reasons)
+            meta = {
+                "spool_path": str(path),
+                "tail_n": tail,
+                "nodes_seen_tail": len(all_summaries),
+                "nodes_emitted": len(all_summaries),
+                "reports_parsed": len(reports),
+                "reports_invalid": invalid_count,
+                "computed_at": datetime.now(timezone.utc).isoformat(),
+            }
+            return renderer.render(all_summaries, meta=meta)
+        else:
+            root = Path(dir_path)  # type: ignore[arg-type]
+            files = sorted(root.glob(glob))
+            reports: list[dict] = []
+            reports_invalid_total = 0
+            for fp in files:
+                file_reports, invalid_count = tail_jsonl_with_stats(fp, tail)
+                reports.extend(file_reports)
+                reports_invalid_total += invalid_count
+            all_summaries = summarize_by_node(reports, top_k_reasons=top_k_reasons)
+            meta = {
+                "spool_dir": str(root),
+                "tail_n": tail,
+                "files_seen": len(files),
+                "nodes_seen_tail": len(all_summaries),
+                "nodes_emitted": len(all_summaries),
+                "reports_parsed": len(reports),
+                "reports_invalid": reports_invalid_total,
+                "computed_at": datetime.now(timezone.utc).isoformat(),
+            }
+            return renderer.render(all_summaries, meta=meta)
+
+    try:
+        while True:
+            # ANSI: clear screen + move cursor to top-left
+            sys.stdout.write("\033[2J\033[H")
+            sys.stdout.flush()
+            output = _build_output()
+            typer.echo(output)
+            typer.echo(f"\n[Refreshing every {interval}s — Ctrl+C to exit]")
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        pass
 
 
 if __name__ == "__main__":

@@ -88,6 +88,12 @@ class ExplainRenderer(Renderer):
             else:
                 blocks.append("- Most frequent issue: none")
 
+            if summary.signal_trends:
+                blocks.append("")
+                blocks.append("Trends:")
+                for sig, trend in sorted(summary.signal_trends.items()):
+                    blocks.append(f"- {sig}: {trend['label']}")
+
             blocks.append("")
 
         return "\n".join(blocks).rstrip()

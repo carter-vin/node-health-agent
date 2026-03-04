@@ -49,6 +49,13 @@ class PrettyRenderer(Renderer):
                 top_reasons = "none"
 
             blocks.append(f"Top reasons: {top_reasons}")
+
+            if summary.signal_trends:
+                blocks.append("")
+                blocks.append("Trends:")
+                for sig, trend in sorted(summary.signal_trends.items()):
+                    blocks.append(f"  {sig}: {trend['label']}")
+
             blocks.append("")
 
         return "\n".join(blocks).rstrip()

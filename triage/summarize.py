@@ -8,11 +8,104 @@ Deterministic summarization for operator-friendly output
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Iterable
 
 
 TRIAGE_SCHEMA_VERSION = "1"
+
+
+# ---------------------------------------------------------------------------
+# Trend detection helpers
+# ---------------------------------------------------------------------------
+
+def _parse_iso_epoch(ts: str) -> float | None:
+    """Parse ISO 8601 timestamp to epoch float. Returns None on failure."""
+    try:
+        dt = datetime.fromisoformat(ts)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
+    except Exception:
+        return None
+
+
+def _linear_slope(pairs: list[tuple[float, float]]) -> float | None:
+    """
+    Compute least-squares slope (y per second) from (x_epoch, y) pairs.
+    Returns None when fewer than 2 points or denominator is zero.
+    """
+    n = len(pairs)
+    if n < 2:
+        return None
+    sum_x = sum(x for x, _ in pairs)
+    sum_y = sum(y for _, y in pairs)
+    sum_xx = sum(x * x for x, _ in pairs)
+    sum_xy = sum(x * y for x, y in pairs)
+    denom = n * sum_xx - sum_x * sum_x
+    if denom == 0.0:
+        return None
+    return (n * sum_xy - sum_x * sum_y) / denom
+
+
+def _trend_direction(slope_per_hr: float, stable_threshold: float) -> str:
+    if abs(slope_per_hr) < stable_threshold:
+        return "stable"
+    return "rising" if slope_per_hr > 0 else "declining"
+
+
+def _trend_label(direction: str, slope_per_hr: float, unit: str) -> str:
+    if direction == "stable":
+        return "stable"
+    sign = "+" if slope_per_hr > 0 else ""
+    return f"{direction} ({sign}{slope_per_hr:.2f} {unit})"
+
+
+def compute_signal_trends(
+    ts_cpu1: list[tuple[float, float]],
+    ts_mem_avail: list[tuple[float, float]],
+    ts_disk_free: list[tuple[float, float]],
+) -> dict[str, dict]:
+    """
+    Compute slope-based trend direction for key signals.
+
+    Each input list is a list of (epoch_seconds, value) pairs in chronological order.
+    Returns a dict keyed by signal name with keys: direction, slope_per_hr, label.
+    """
+    trends: dict[str, dict] = {}
+
+    cpu_slope = _linear_slope(ts_cpu1)
+    if cpu_slope is not None:
+        slope_per_hr = cpu_slope * 3600.0
+        direction = _trend_direction(slope_per_hr, stable_threshold=0.1)
+        trends["loadavg_1m"] = {
+            "direction": direction,
+            "slope_per_hr": round(slope_per_hr, 3),
+            "label": _trend_label(direction, slope_per_hr, "load/hr"),
+        }
+
+    mem_slope = _linear_slope(ts_mem_avail)
+    if mem_slope is not None:
+        slope_per_hr_gb = (mem_slope * 3600.0) / (1024 ** 3)
+        direction = _trend_direction(slope_per_hr_gb, stable_threshold=0.1)
+        trends["mem_available_bytes"] = {
+            "direction": direction,
+            "slope_per_hr": round(slope_per_hr_gb, 3),
+            "label": _trend_label(direction, slope_per_hr_gb, "GB/hr"),
+        }
+
+    disk_slope = _linear_slope(ts_disk_free)
+    if disk_slope is not None:
+        slope_per_hr_gb = (disk_slope * 3600.0) / (1024 ** 3)
+        direction = _trend_direction(slope_per_hr_gb, stable_threshold=0.01)
+        trends["disk_free_bytes"] = {
+            "direction": direction,
+            "slope_per_hr": round(slope_per_hr_gb, 3),
+            "label": _trend_label(direction, slope_per_hr_gb, "GB/hr"),
+        }
+
+    return trends
 
 
 @dataclass(frozen=True)
@@ -40,6 +133,8 @@ class NodeSummary:
     min_mem_available_pct_tail: float | None = None
     min_disk_free_pct_tail: float | None = None
     health_transitions_tail: int = 0
+    # Trend detection: keyed by signal name; None when fewer than 2 data points
+    signal_trends: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -57,6 +152,7 @@ class NodeSummary:
             "min_mem_available_pct_tail": self.min_mem_available_pct_tail,
             "min_disk_free_pct_tail": self.min_disk_free_pct_tail,
             "health_transitions_tail": self.health_transitions_tail,
+            "signal_trends": dict(self.signal_trends),
         }
 
 
@@ -120,6 +216,10 @@ def summarize_by_node(
                 "mem_pct_values": [],
                 "disk_pct_values": [],
                 "health_sequence": [],
+                # Time-series for trend detection: (epoch_seconds, value)
+                "ts_cpu1": [],
+                "ts_mem_avail": [],
+                "ts_disk_free": [],
             },
         )
 
@@ -152,6 +252,17 @@ def summarize_by_node(
         disk_total = signals.get("disk_total_bytes")
         if isinstance(disk_free, (int, float)) and isinstance(disk_total, (int, float)) and disk_total > 0:
             acc["disk_pct_values"].append((disk_free / disk_total) * 100.0)
+
+        # Collect time-series data for trend computation
+        emitted_at_str = report.get("timing", {}).get("emitted_at") or ""
+        epoch = _parse_iso_epoch(emitted_at_str)
+        if epoch is not None:
+            if isinstance(loadavg_1m, (int, float)):
+                acc["ts_cpu1"].append((epoch, float(loadavg_1m)))
+            if isinstance(mem_avail, (int, float)):
+                acc["ts_mem_avail"].append((epoch, float(mem_avail)))
+            if isinstance(disk_free, (int, float)):
+                acc["ts_disk_free"].append((epoch, float(disk_free)))
 
         # Latest report wins by emitted_at then seq
         key = _ordering_key(report)
@@ -196,6 +307,12 @@ def summarize_by_node(
             1 for i in range(1, len(health_seq)) if health_seq[i] != health_seq[i - 1]
         )
 
+        signal_trends = compute_signal_trends(
+            acc["ts_cpu1"],
+            acc["ts_mem_avail"],
+            acc["ts_disk_free"],
+        )
+
         summaries.append(
             NodeSummary(
                 node_id=node_id,
@@ -220,6 +337,7 @@ def summarize_by_node(
                 min_mem_available_pct_tail=min_mem_available_pct_tail,
                 min_disk_free_pct_tail=min_disk_free_pct_tail,
                 health_transitions_tail=health_transitions_tail,
+                signal_trends=signal_trends,
             )
         )
 
@@ -284,6 +402,10 @@ def render_text(node_summaries: Iterable[NodeSummary], *, meta: dict) -> str:
         lines.append(f"min_mem_available_pct_tail: {_fmt_pct_stat(summary.min_mem_available_pct_tail)}")
         lines.append(f"min_disk_free_pct_tail: {_fmt_pct_stat(summary.min_disk_free_pct_tail)}")
         lines.append(f"health_transitions_tail: {summary.health_transitions_tail}")
+
+        if summary.signal_trends:
+            for sig, trend in sorted(summary.signal_trends.items()):
+                lines.append(f"{sig}_trend: {trend['label']}")
 
     return "\n".join(lines)
 
