@@ -617,6 +617,7 @@ Output:
 ```
 reports_parsed: 50
 last_seq: 42
+last_health: OK
 ```
 
 This command is useful for validating spool file integrity without full parsing overhead.
