@@ -235,6 +235,8 @@ def test_triage_summarize_multi_node_json() -> None:
                 "min_disk_free_pct_tail": None,
                 "health_transitions_tail": 2,
                 "signal_trends": {},
+                "threshold_profile": "default",
+                "thresholds_hash": "",
             },
             {
                 "node_id": "node-b",
@@ -255,6 +257,8 @@ def test_triage_summarize_multi_node_json() -> None:
                 "min_disk_free_pct_tail": None,
                 "health_transitions_tail": 0,
                 "signal_trends": {},
+                "threshold_profile": "default",
+                "thresholds_hash": "",
             },
         ],
     }
