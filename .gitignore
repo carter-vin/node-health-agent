@@ -185,6 +185,7 @@ cython_debug/
 
 # VS Code
 .vscode/
+requirements.txt
 
 # ----------------------------------------------------------------------
 # Runtime artifacts
@@ -200,3 +201,8 @@ logs/
 UPDATE_SUMMARY.md
 
 PLAN.md
+
+.claudeignore
+CLAUDE_SUMMARY.md
+CLAUDE_PLAN.md
+CLAUDE.md
