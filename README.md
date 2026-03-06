@@ -238,9 +238,13 @@ The agent emits structured JSON events to `stdout` with a versioned, stable even
   "spool_path": "spool/node_reports.jsonl",
   "spool_max_bytes": null,
   "spool_rotate_count": 3,
+  "threshold_profile": "default",
+  "thresholds_hash": "a1b2c3d4e5f60718",
   "utc_now": "2026-02-11T18:00:00.000000+00:00"
 }
 ```
+
+For `run` mode, `agent_start` also includes `max_iterations` only when `--max-iterations` is non-zero.
 
 **agent_tick**
 ```json
@@ -343,7 +347,9 @@ Each health report is a JSON object included in the spool JSONL file. Reports ar
   },
   "meta": {
     "schema_version": "1",
-    "agent_version": "0.1.0"
+    "agent_version": "0.1.0",
+    "threshold_profile": "default",
+    "thresholds_hash": "a1b2c3d4e5f60718"
   },
   "timing": {
     "seq": 42,
@@ -943,31 +949,39 @@ health_report_health_status.labels(node_id=node_id, health=health).set(health_co
 
 ### Custom Thresholds
 
-Health evaluation thresholds are defined in `agent/evaluate.py`:
+Thresholds are configurable at runtime through config + env precedence:
 
-```python
-CPU_DEGRADED_FACTOR = 0.85   # loadavg > cpu_count * 0.85
-CPU_UNHEALTHY_FACTOR = 1.25  # loadavg > cpu_count * 1.25
+`defaults` → `--config <json>` → env overrides
 
-MEM_DEGRADED_PCT = 15.0      # < 15% available
-MEM_UNHEALTHY_PCT = 8.0      # < 8% available
+Example config file:
 
-DISK_DEGRADED_PCT = 10.0     # < 10% free
-DISK_UNHEALTHY_PCT = 5.0     # < 5% free
+```json
+{
+  "cpu": {"degraded_factor": 0.85, "unhealthy_factor": 1.25},
+  "mem": {"degraded_pct": 15.0, "unhealthy_pct": 8.0},
+  "disk": {"degraded_pct": 10.0, "unhealthy_pct": 5.0},
+  "evaluation": {"profile_name": "default"}
+}
 ```
 
-To customize, modify these constants and rebuild/redeploy:
+Example usage:
 
 ```bash
-# Edit thresholds
-vim agent/evaluate.py
+# Use config file
+node-health-agent oneshot --config config/thresholds.json
 
-# Reinstall
-pip install -e .
+# Override specific values via env
+NODE_AGENT_CPU_DEGRADED_FACTOR=0.75 node-health-agent oneshot
+NODE_AGENT_EVAL_PROFILE=strict node-health-agent run --interval 2
 
-# Test new thresholds
+# Inspect effective merged config + sources
+node-health-agent config --config config/thresholds.json
+
+# Validate behavior
 pytest tests/test_evaluate_health.py -v
 ```
+
+`agent/evaluate.py` constants remain compatibility defaults; operational tuning should use config/env.
 
 ### Adding Custom Collectors
 

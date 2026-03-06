@@ -199,4 +199,8 @@ logs/
 # ----------------------------------------------------------------------
 UPDATE_SUMMARY.md
 
-PLAN.md
+
+CLAUDE.md
+.claudeignore
+.claude/
+.claude/*
