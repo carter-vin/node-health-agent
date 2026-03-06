@@ -203,6 +203,10 @@ UPDATE_SUMMARY.md
 PLAN.md
 
 .claudeignore
+.cursorignore
+.cursorindexingignore
+CLAUDE.md
 CLAUDE_SUMMARY.md
 CLAUDE_PLAN.md
-CLAUDE.md
+PLAN.md
+UPDATE_SUMMARY.md
