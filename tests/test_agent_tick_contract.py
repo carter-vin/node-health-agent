@@ -1,10 +1,14 @@
 """
-Contract test for agent_tick event payload shape
+Contract test for agent_tick event payload shape and bounded run behavior.
 """
 
 import json
+from pathlib import Path
+
+from typer.testing import CliRunner
 
 from agent.logging import emit_event
+from agent.main import app
 
 
 def test_agent_tick_contract_required_fields(capsys) -> None:
@@ -95,3 +99,77 @@ def test_agent_tick_metrics_contract(capsys) -> None:
     assert isinstance(payload["collector_total_ms"], int)
     assert isinstance(payload["slowest_collector_name"], str)
     assert isinstance(payload["slowest_collector_ms"], int)
+
+
+# ---------------------------------------------------------------------------
+# Bounded run contract tests (real CLI path)
+# ---------------------------------------------------------------------------
+
+def _parse_events(stdout: str) -> list[dict]:
+    events = []
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            events.append(json.loads(line))
+        except json.JSONDecodeError:
+            pass
+    return events
+
+
+def test_bounded_run_exact_tick_counts(tmp_path: Path) -> None:
+    """
+    --max-iterations 2 produces exactly 2 agent_tick and 2 agent_tick_metrics events.
+    """
+    runner = CliRunner()
+    spool = str(tmp_path / "test.jsonl")
+    result = runner.invoke(
+        app,
+        ["run", "--max-iterations", "2", "--interval", "1", "--spool-path", spool],
+        catch_exceptions=False,
+    )
+
+    events = _parse_events(result.output)
+    ticks = [e for e in events if e.get("event_type") == "agent_tick"]
+    metrics = [e for e in events if e.get("event_type") == "agent_tick_metrics"]
+
+    assert len(ticks) == 2, f"Expected 2 agent_tick, got {len(ticks)}"
+    assert len(metrics) == 2, f"Expected 2 agent_tick_metrics, got {len(metrics)}"
+
+
+def test_bounded_run_agent_start_includes_max_iterations(tmp_path: Path) -> None:
+    """
+    agent_start event includes max_iterations when --max-iterations > 0.
+    """
+    runner = CliRunner()
+    spool = str(tmp_path / "test.jsonl")
+    result = runner.invoke(
+        app,
+        ["run", "--max-iterations", "2", "--interval", "1", "--spool-path", spool],
+        catch_exceptions=False,
+    )
+
+    events = _parse_events(result.output)
+    starts = [e for e in events if e.get("event_type") == "agent_start"]
+    assert len(starts) == 1
+    assert starts[0].get("max_iterations") == 2
+
+
+def test_unlimited_run_agent_start_omits_max_iterations(tmp_path: Path) -> None:
+    """
+    agent_start event omits max_iterations when --max-iterations is 0 (unlimited).
+    Tested via oneshot (which also produces an agent_start without max_iterations).
+    """
+    runner = CliRunner()
+    spool = str(tmp_path / "test.jsonl")
+    result = runner.invoke(
+        app,
+        ["oneshot", "--spool-path", spool],
+        catch_exceptions=False,
+    )
+
+    events = _parse_events(result.output)
+    starts = [e for e in events if e.get("event_type") == "agent_start"]
+    assert len(starts) == 1
+    assert "max_iterations" not in starts[0]

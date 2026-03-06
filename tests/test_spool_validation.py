@@ -34,6 +34,8 @@ def _load_validate_module():
 _mod = _load_validate_module()
 validate_report = _mod.validate_report
 validate_spool = _mod.validate_spool
+validate_event = _mod.validate_event
+validate_events_file = _mod.validate_events_file
 
 
 # ---------------------------------------------------------------------------
@@ -197,6 +199,118 @@ def test_invalid_json_line_counted_as_invalid(tmp_path: Path) -> None:
 def test_missing_spool_raises(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
         validate_spool(str(tmp_path / "nonexistent.jsonl"), n=200)
+
+
+# ---------------------------------------------------------------------------
+# validate_event — agent_start events
+# ---------------------------------------------------------------------------
+
+VALID_EVENT: dict = {
+    "event_type": "agent_start",
+    "agent_version": "0.1.0",
+    "utc_now": "2026-01-01T00:00:00+00:00",
+    "mode": "oneshot",
+    "threshold_profile": "default",
+    "thresholds_hash": "abc1234567890abc",
+}
+
+
+def test_valid_agent_start_event_produces_no_errors() -> None:
+    errors = validate_event(VALID_EVENT, 1)
+    assert errors == [], f"Unexpected errors: {errors}"
+
+
+def test_valid_agent_start_with_max_iterations() -> None:
+    import copy
+    event = copy.deepcopy(VALID_EVENT)
+    event["max_iterations"] = 3
+    errors = validate_event(event, 1)
+    assert errors == []
+
+
+def test_valid_agent_start_run_mode() -> None:
+    import copy
+    event = copy.deepcopy(VALID_EVENT)
+    event["mode"] = "run"
+    errors = validate_event(event, 1)
+    assert errors == []
+
+
+def test_invalid_event_type_produces_error() -> None:
+    import copy
+    event = copy.deepcopy(VALID_EVENT)
+    event["event_type"] = "agent_tick"
+    errors = validate_event(event, 1)
+    assert len(errors) == 1
+    assert "agent_start" in str(errors[0])
+
+
+def test_invalid_mode_produces_error() -> None:
+    import copy
+    event = copy.deepcopy(VALID_EVENT)
+    event["mode"] = "batch"
+    errors = validate_event(event, 1)
+    assert any("mode" in str(e) for e in errors)
+
+
+def test_missing_threshold_profile_produces_error() -> None:
+    import copy
+    event = copy.deepcopy(VALID_EVENT)
+    del event["threshold_profile"]
+    errors = validate_event(event, 1)
+    assert any("threshold_profile" in str(e) for e in errors)
+
+
+def test_invalid_max_iterations_zero_produces_error() -> None:
+    """max_iterations=0 is invalid in an event (0 means unlimited and should be omitted)."""
+    import copy
+    event = copy.deepcopy(VALID_EVENT)
+    event["max_iterations"] = 0
+    errors = validate_event(event, 1)
+    assert any("max_iterations" in str(e) for e in errors)
+
+
+def test_invalid_max_iterations_string_produces_error() -> None:
+    import copy
+    event = copy.deepcopy(VALID_EVENT)
+    event["max_iterations"] = "three"
+    errors = validate_event(event, 1)
+    assert any("max_iterations" in str(e) for e in errors)
+
+
+def test_validate_events_file_valid(tmp_path: Path) -> None:
+    events_path = tmp_path / "events.jsonl"
+    events_path.write_text(json.dumps(VALID_EVENT) + "\n")
+    valid, invalid, errors = validate_events_file(str(events_path), n=200)
+    assert invalid == 0
+    assert valid == 1
+    assert errors == []
+
+
+def test_validate_events_file_skips_non_start_events(tmp_path: Path) -> None:
+    other = {"event_type": "agent_tick", "utc_now": "2026-01-01T00:00:00+00:00", "agent_version": "0.1.0"}
+    events_path = tmp_path / "events.jsonl"
+    events_path.write_text(json.dumps(other) + "\n" + json.dumps(VALID_EVENT) + "\n")
+    valid, invalid, errors = validate_events_file(str(events_path), n=200)
+    assert valid == 1
+    assert invalid == 0
+
+
+def test_validate_events_file_invalid_event(tmp_path: Path) -> None:
+    import copy
+    bad = copy.deepcopy(VALID_EVENT)
+    bad["mode"] = "unknown"
+    events_path = tmp_path / "events.jsonl"
+    events_path.write_text(json.dumps(bad) + "\n")
+    valid, invalid, errors = validate_events_file(str(events_path), n=200)
+    assert invalid == 1
+    assert valid == 0
+    assert any("mode" in str(e) for e in errors)
+
+
+def test_validate_events_file_missing_raises(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError):
+        validate_events_file(str(tmp_path / "nonexistent.jsonl"), n=200)
 
 
 def test_n_limits_lines_checked(tmp_path: Path) -> None:
