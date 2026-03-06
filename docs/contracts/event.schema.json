@@ -71,6 +71,9 @@
     "spool_rotate_count": {"type": "integer", "minimum": 1},
     "rotated_to":        {"type": "string"},
     "prior_size_bytes":  {"type": "integer", "minimum": 0},
-    "bytes":             {"type": "integer", "minimum": 0}
+    "bytes":             {"type": "integer", "minimum": 0},
+    "threshold_profile": {"type": "string"},
+    "thresholds_hash":   {"type": "string"},
+    "max_iterations":    {"type": "integer", "minimum": 1}
   }
 }

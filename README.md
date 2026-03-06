@@ -238,9 +238,13 @@ The agent emits structured JSON events to `stdout` with a versioned, stable even
   "spool_path": "spool/node_reports.jsonl",
   "spool_max_bytes": null,
   "spool_rotate_count": 3,
+  "threshold_profile": "default",
+  "thresholds_hash": "a1b2c3d4e5f60718",
   "utc_now": "2026-02-11T18:00:00.000000+00:00"
 }
 ```
+
+For `run` mode with `--max-iterations`, the event also includes `max_iterations` (omitted when 0/unlimited).
 
 **agent_tick**
 ```json
