@@ -135,6 +135,9 @@ class NodeSummary:
     health_transitions_tail: int = 0
     # Trend detection: keyed by signal name; None when fewer than 2 data points
     signal_trends: dict = field(default_factory=dict)
+    # Threshold config context from latest report meta
+    threshold_profile: str = "default"
+    thresholds_hash: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -153,6 +156,8 @@ class NodeSummary:
             "min_disk_free_pct_tail": self.min_disk_free_pct_tail,
             "health_transitions_tail": self.health_transitions_tail,
             "signal_trends": dict(self.signal_trends),
+            "threshold_profile": self.threshold_profile,
+            "thresholds_hash": self.thresholds_hash,
         }
 
 
@@ -313,6 +318,10 @@ def summarize_by_node(
             acc["ts_disk_free"],
         )
 
+        meta_block = latest.get("meta", {})
+        threshold_profile = str(meta_block.get("threshold_profile", "default"))
+        thresholds_hash = str(meta_block.get("thresholds_hash", ""))
+
         summaries.append(
             NodeSummary(
                 node_id=node_id,
@@ -338,6 +347,8 @@ def summarize_by_node(
                 min_disk_free_pct_tail=min_disk_free_pct_tail,
                 health_transitions_tail=health_transitions_tail,
                 signal_trends=signal_trends,
+                threshold_profile=threshold_profile,
+                thresholds_hash=thresholds_hash,
             )
         )
 

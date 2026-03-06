@@ -7,14 +7,6 @@ Human explanation renderer
 
 from __future__ import annotations
 
-from agent.evaluate import (
-    CPU_DEGRADED_FACTOR,
-    CPU_UNHEALTHY_FACTOR,
-    DISK_DEGRADED_PCT,
-    DISK_UNHEALTHY_PCT,
-    MEM_DEGRADED_PCT,
-    MEM_UNHEALTHY_PCT,
-)
 from triage.render.base import Renderer
 from triage.render.utils import format_load
 
@@ -32,19 +24,9 @@ _REASON_LABELS = {
 def _reason_message(summary, reason: str) -> str:
     label = _REASON_LABELS.get(reason, reason)
     if reason == "signal:cpu_high" and summary.cpu_count_logical and summary.loadavg_1m is not None:
-        threshold = summary.cpu_count_logical * CPU_DEGRADED_FACTOR
-        return f"{label} ({format_load(summary.loadavg_1m)} > {threshold:.2f})"
+        return f"{label} (loadavg_1m={format_load(summary.loadavg_1m)})"
     if reason == "signal:cpu_critical" and summary.cpu_count_logical and summary.loadavg_1m is not None:
-        threshold = summary.cpu_count_logical * CPU_UNHEALTHY_FACTOR
-        return f"{label} ({format_load(summary.loadavg_1m)} > {threshold:.2f})"
-    if reason == "signal:disk_free_low" and summary.disk_free_bytes and summary.disk_total_bytes:
-        return f"{label} ({DISK_DEGRADED_PCT:.0f}% threshold)"
-    if reason == "signal:disk_free_critical" and summary.disk_free_bytes and summary.disk_total_bytes:
-        return f"{label} ({DISK_UNHEALTHY_PCT:.0f}% threshold)"
-    if reason == "signal:mem_available_low" and summary.mem_available_bytes and summary.mem_total_bytes:
-        return f"{label} ({MEM_DEGRADED_PCT:.0f}% threshold)"
-    if reason == "signal:mem_available_critical" and summary.mem_available_bytes and summary.mem_total_bytes:
-        return f"{label} ({MEM_UNHEALTHY_PCT:.0f}% threshold)"
+        return f"{label} (loadavg_1m={format_load(summary.loadavg_1m)})"
     return label
 
 
@@ -93,6 +75,15 @@ class ExplainRenderer(Renderer):
                 blocks.append("Trends:")
                 for sig, trend in sorted(summary.signal_trends.items()):
                     blocks.append(f"- {sig}: {trend['label']}")
+
+            blocks.append("")
+            blocks.append("Config Context:")
+            blocks.append(f"- threshold_profile: {summary.threshold_profile}")
+            if summary.thresholds_hash:
+                blocks.append(f"- thresholds_hash: {summary.thresholds_hash}")
+            else:
+                blocks.append("- thresholds_hash: (unavailable)")
+            blocks.append("- (exact threshold values require original config source)")
 
             blocks.append("")
 
