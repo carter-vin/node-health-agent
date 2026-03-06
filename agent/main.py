@@ -185,6 +185,8 @@ def oneshot(
         "agent_start",
         agent_version=AGENT_VERSION,
         mode="oneshot",
+        threshold_profile=cfg_profile,
+        thresholds_hash=cfg_hash,
         spool_path=spool_path,
         spool_max_bytes=spool_max_bytes,
         spool_rotate_count=spool_rotate_count,
@@ -412,6 +414,12 @@ def run(
         "--config",
         help="Path to JSON config file for threshold overrides.",
     ),
+    max_iterations: int = typer.Option(
+        0,
+        "--max-iterations",
+        help="Stop after N iterations (0 = unlimited).",
+        min=0,
+    ),
 ) -> None:
     """
     Run continuous agent loop
@@ -420,14 +428,21 @@ def run(
     cfg_hash = compute_config_hash(cfg)
     cfg_profile = cfg.get("evaluation", {}).get("profile_name", "default")
 
-    emit_event(
-        "agent_start",
-        agent_version=AGENT_VERSION,
-        mode="run",
+    _start_fields: dict = dict(
+        threshold_profile=cfg_profile,
+        thresholds_hash=cfg_hash,
         interval_s=interval,
         spool_path=spool_path,
         spool_max_bytes=spool_max_bytes,
         spool_rotate_count=spool_rotate_count,
+    )
+    if max_iterations > 0:
+        _start_fields["max_iterations"] = max_iterations
+    emit_event(
+        "agent_start",
+        agent_version=AGENT_VERSION,
+        mode="run",
+        **_start_fields,
     )
 
     debug_sleep_ms = _debug_sleep_ms()
@@ -452,7 +467,11 @@ def run(
 
     try:
         last_tick_start = None
+        _iteration = 0
         while True:
+            if max_iterations > 0 and _iteration >= max_iterations:
+                break
+            _iteration += 1
             tick_start = time.monotonic()
             if last_tick_start is None:
                 sleep_drift_ms = 0

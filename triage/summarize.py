@@ -135,6 +135,8 @@ class NodeSummary:
     health_transitions_tail: int = 0
     # Trend detection: keyed by signal name; None when fewer than 2 data points
     signal_trends: dict = field(default_factory=dict)
+    # Threshold config hash from the latest report meta (empty string when absent)
+    thresholds_hash: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -153,6 +155,7 @@ class NodeSummary:
             "min_disk_free_pct_tail": self.min_disk_free_pct_tail,
             "health_transitions_tail": self.health_transitions_tail,
             "signal_trends": dict(self.signal_trends),
+            "thresholds_hash": self.thresholds_hash,
         }
 
 
@@ -313,6 +316,8 @@ def summarize_by_node(
             acc["ts_disk_free"],
         )
 
+        thresholds_hash = latest.get("meta", {}).get("thresholds_hash", "") or ""
+
         summaries.append(
             NodeSummary(
                 node_id=node_id,
@@ -338,6 +343,7 @@ def summarize_by_node(
                 min_disk_free_pct_tail=min_disk_free_pct_tail,
                 health_transitions_tail=health_transitions_tail,
                 signal_trends=signal_trends,
+                thresholds_hash=thresholds_hash,
             )
         )
 
@@ -435,11 +441,30 @@ def render_json(node_summaries: Iterable[NodeSummary], *, meta: dict) -> dict:
         meta_payload["files_seen"] = meta.get("files_seen")
     if "reports_invalid_total" in meta:
         meta_payload["reports_invalid_total"] = meta.get("reports_invalid_total")
+    if "mixed_thresholds" in meta:
+        meta_payload["mixed_thresholds"] = meta.get("mixed_thresholds")
+    if "thresholds_hashes_seen" in meta:
+        meta_payload["thresholds_hashes_seen"] = meta.get("thresholds_hashes_seen")
 
     return {
         "meta": meta_payload,
         "nodes": [summary.to_dict() for summary in summaries],
     }
+
+
+def detect_mixed_thresholds(summaries: list[NodeSummary]) -> tuple[bool, list[str]]:
+    """
+    Detect whether multiple distinct thresholds_hash values appear across summaries.
+
+    Returns (mixed: bool, sorted_hashes: list[str]).
+    Empty hashes are included only when non-empty hashes also exist (skipped when
+    all summaries have no hash data).
+    """
+    hashes = sorted({s.thresholds_hash for s in summaries if s.thresholds_hash})
+    if len(hashes) <= 1 and all(not s.thresholds_hash for s in summaries):
+        return False, []
+    mixed = len(hashes) > 1
+    return mixed, hashes
 
 
 def summarize_reports(reports: Iterable[dict]) -> str:

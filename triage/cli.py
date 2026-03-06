@@ -15,7 +15,7 @@ import typer
 
 from triage.read import last_valid_report, tail_jsonl, tail_jsonl_with_stats
 from triage.render import get_renderer
-from triage.summarize import summarize_by_node, summarize_reports
+from triage.summarize import detect_mixed_thresholds, summarize_by_node, summarize_reports
 
 
 app = typer.Typer(add_completion=False, help="node-health-triage: local triage tools")
@@ -313,6 +313,11 @@ def summarize_dir(
         "--top-k-reasons",
         help="Maximum number of reasons to display per node.",
     ),
+    warn_mixed_thresholds: bool = typer.Option(
+        False,
+        "--warn-mixed-thresholds",
+        help="Warn when nodes report different thresholds_hash values.",
+    ),
 ) -> None:
     """
     Summarize a directory of spools with deterministic per-node output
@@ -359,15 +364,27 @@ def summarize_dir(
         "computed_at": datetime.now(timezone.utc).isoformat(),
     }
 
+    mixed_warning: str | None = None
+    if warn_mixed_thresholds:
+        mixed, hashes = detect_mixed_thresholds(all_summaries)
+        meta["mixed_thresholds"] = mixed
+        meta["thresholds_hashes_seen"] = hashes
+        if mixed:
+            mixed_warning = f"WARNING: mixed thresholds detected across fleet: {hashes}"
+
     if dual:
         human_format = output_format if output_format != "json" else "pretty"
         human_output = get_renderer(human_format).render(summaries, meta=meta)
         json_output = get_renderer("json").render(summaries, meta=meta)
+        if mixed_warning and human_format != "json":
+            typer.echo(mixed_warning)
         typer.echo(human_output)
         typer.echo("")
         typer.echo(json_output)
     else:
         renderer = get_renderer(output_format)
+        if mixed_warning and output_format != "json":
+            typer.echo(mixed_warning)
         typer.echo(renderer.render(summaries, meta=meta))
 
     _maybe_exit_by_health(

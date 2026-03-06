@@ -159,16 +159,129 @@ def validate_spool(spool_path: str, n: int) -> tuple[int, int, list[ValidationEr
     return valid_count, invalid_count, all_errors
 
 
+VALID_MODES = frozenset({"oneshot", "run"})
+
+
+def validate_event(event: dict, line: int) -> list[ValidationError]:
+    """
+    Validate a single parsed agent_start event dict.
+
+    Checks required fields and optional max_iterations.
+    Returns a list of ValidationError (empty means valid).
+    """
+    errors: list[ValidationError] = []
+
+    # Must be a dict with event_type == "agent_start"
+    event_type = event.get("event_type")
+    if event_type != "agent_start":
+        errors.append(ValidationError(line, f"event_type must be 'agent_start', got {event_type!r}"))
+        return errors
+
+    # Required fields
+    agent_version = event.get("agent_version")
+    if not isinstance(agent_version, str) or not agent_version.strip():
+        errors.append(ValidationError(line, "agent_version must be a non-empty string"))
+
+    utc_now = event.get("utc_now")
+    if not _is_rfc3339(utc_now):
+        errors.append(ValidationError(line, f"utc_now is not a valid RFC3339 timestamp: {utc_now!r}"))
+
+    mode = event.get("mode")
+    if mode not in VALID_MODES:
+        errors.append(ValidationError(line, f"mode must be one of {sorted(VALID_MODES)}, got {mode!r}"))
+
+    threshold_profile = event.get("threshold_profile")
+    if not isinstance(threshold_profile, str):
+        errors.append(ValidationError(line, "threshold_profile must be a string"))
+
+    thresholds_hash = event.get("thresholds_hash")
+    if not isinstance(thresholds_hash, str):
+        errors.append(ValidationError(line, "thresholds_hash must be a string"))
+
+    # Optional: max_iterations must be int >= 1 when present
+    if "max_iterations" in event:
+        max_iter = event["max_iterations"]
+        if not isinstance(max_iter, int) or isinstance(max_iter, bool) or max_iter < 1:
+            errors.append(ValidationError(line, f"max_iterations must be an integer >= 1, got {max_iter!r}"))
+
+    return errors
+
+
+def validate_events_file(events_path: str, n: int) -> tuple[int, int, list[ValidationError]]:
+    """
+    Validate agent_start event lines from a JSONL file (stdout capture).
+
+    Only lines with event_type == "agent_start" are validated; other lines are skipped.
+    Returns (valid_count, invalid_count, all_errors).
+    """
+    path = Path(events_path)
+    if not path.exists():
+        raise FileNotFoundError(f"events file not found: {events_path}")
+
+    raw_lines = [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    tail = raw_lines[-n:] if n > 0 else raw_lines
+
+    all_errors: list[ValidationError] = []
+    valid_count = 0
+    invalid_count = 0
+
+    for i, line in enumerate(tail, 1):
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            # Non-JSON lines in a mixed event stream are skipped
+            continue
+
+        if not isinstance(event, dict):
+            continue
+
+        if event.get("event_type") != "agent_start":
+            continue
+
+        errors = validate_event(event, i)
+        if errors:
+            all_errors.extend(errors)
+            invalid_count += 1
+        else:
+            valid_count += 1
+
+    return valid_count, invalid_count, all_errors
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Validate reports in a node-health-agent spool JSONL file.",
     )
-    parser.add_argument("--spool", required=True, help="Path to spool JSONL file")
+    parser.add_argument("--spool", help="Path to spool JSONL file")
+    parser.add_argument("--events", help="Path to agent stdout event JSONL file (validates agent_start lines)")
     parser.add_argument(
         "--n", type=int, default=200,
-        help="Number of reports to validate from the end (default: 200, 0 = all)",
+        help="Number of lines to validate from the end (default: 200, 0 = all)",
     )
     args = parser.parse_args()
+
+    if args.events:
+        try:
+            valid_count, invalid_count, errors = validate_events_file(args.events, args.n)
+        except FileNotFoundError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
+
+        if errors:
+            for err in errors:
+                print(str(err), file=sys.stderr)
+            print(
+                f"\nvalidation failed: {invalid_count} invalid agent_start events, {valid_count} valid",
+                file=sys.stderr,
+            )
+            return 1
+
+        print(f"ok: {valid_count} agent_start events valid")
+        return 0
+
+    if not args.spool:
+        print("error: provide --spool or --events", file=sys.stderr)
+        return 1
 
     try:
         valid_count, invalid_count, errors = validate_spool(args.spool, args.n)
