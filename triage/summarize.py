@@ -356,6 +356,13 @@ def render_text(node_summaries: Iterable[NodeSummary], *, meta: dict) -> str:
     if "files_seen" in meta:
         lines.append(f"files_seen: {meta.get('files_seen', 0)}")
 
+    fleet_ok = sum(1 for s in summaries if s.current_health == "OK")
+    fleet_degraded = sum(1 for s in summaries if s.current_health == "DEGRADED")
+    fleet_unhealthy = sum(1 for s in summaries if s.current_health == "UNHEALTHY")
+    lines.append(f"fleet_ok: {fleet_ok}")
+    lines.append(f"fleet_degraded: {fleet_degraded}")
+    lines.append(f"fleet_unhealthy: {fleet_unhealthy}")
+
     if not summaries:
         return "\n".join(lines)
 

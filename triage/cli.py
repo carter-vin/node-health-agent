@@ -28,6 +28,7 @@ def _apply_filters(
     only_degraded: bool,
     only_unhealthy: bool,
     min_degraded_count: int | None,
+    changes_only: bool = False,
 ):
     if only_degraded and only_unhealthy:
         raise typer.BadParameter("--only-degraded and --only-unhealthy are mutually exclusive")
@@ -49,6 +50,9 @@ def _apply_filters(
             for summary in filtered
             if summary.degraded_count_tail >= min_degraded_count
         ]
+
+    if changes_only:
+        filtered = [s for s in filtered if s.health_transitions_tail > 0]
 
     return filtered
 
@@ -206,6 +210,11 @@ def summarize(
         "--top-k-reasons",
         help="Maximum number of reasons to display per node.",
     ),
+    changes_only: bool = typer.Option(
+        False,
+        "--changes-only",
+        help="Show only nodes with health transitions in the tail window.",
+    ),
 ) -> None:
     """
     Summarize the spool with deterministic per-node output
@@ -230,6 +239,7 @@ def summarize(
         only_degraded=only_degraded,
         only_unhealthy=only_unhealthy,
         min_degraded_count=min_degraded_count,
+        changes_only=changes_only,
     )
 
     meta = {
@@ -313,6 +323,11 @@ def summarize_dir(
         "--top-k-reasons",
         help="Maximum number of reasons to display per node.",
     ),
+    changes_only: bool = typer.Option(
+        False,
+        "--changes-only",
+        help="Show only nodes with health transitions in the tail window.",
+    ),
 ) -> None:
     """
     Summarize a directory of spools with deterministic per-node output
@@ -345,6 +360,7 @@ def summarize_dir(
         only_degraded=only_degraded,
         only_unhealthy=only_unhealthy,
         min_degraded_count=min_degraded_count,
+        changes_only=changes_only,
     )
 
     meta = {

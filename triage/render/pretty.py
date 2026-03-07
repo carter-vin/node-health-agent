@@ -15,7 +15,15 @@ class PrettyRenderer(Renderer):
     name = "pretty"
 
     def render(self, summaries, *, meta: dict) -> str:
+        summaries = list(summaries)
         blocks: list[str] = []
+
+        ok_count = sum(1 for s in summaries if s.current_health == "OK")
+        degraded_count = sum(1 for s in summaries if s.current_health == "DEGRADED")
+        unhealthy_count = sum(1 for s in summaries if s.current_health == "UNHEALTHY")
+        blocks.append(f"Fleet: {ok_count} OK / {degraded_count} DEGRADED / {unhealthy_count} UNHEALTHY")
+        blocks.append("")
+
         for summary in summaries:
             header = f"NODE {summary.node_id}"
             blocks.append(header)

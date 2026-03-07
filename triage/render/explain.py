@@ -53,6 +53,14 @@ class ExplainRenderer(Renderer):
 
     def render(self, summaries, *, meta: dict) -> str:
         blocks: list[str] = []
+
+        threshold_profile = meta.get("threshold_profile")
+        if threshold_profile:
+            blocks.append(f"Config: threshold_profile={threshold_profile}")
+        else:
+            blocks.append("Config: threshold_profile=default")
+        blocks.append("")
+
         for summary in summaries:
             blocks.append(f"Node: {summary.node_id}")
             blocks.append(f"Status: {summary.current_health}")
