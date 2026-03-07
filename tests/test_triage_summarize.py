@@ -150,6 +150,9 @@ def test_triage_summarize_multi_node_text() -> None:
         [
             "nodes_seen_tail: 2",
             "nodes_emitted: 2",
+            "fleet_ok: 1",
+            "fleet_degraded: 1",
+            "fleet_unhealthy: 0",
             "",
             "node_id: node-a",
             "current_boot_id: boot-1",
