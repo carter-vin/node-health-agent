@@ -1,115 +1,124 @@
-# node-health-agent — Current Plan
+# node-health-agent — Development Plan
 
 Last updated: 2026-03-06
 
-## Current State
+## Current Status
 
 Recently completed:
 
-1. `agent_start` emits `threshold_profile` and `thresholds_hash` in `oneshot` and `run`.
-2. `run` supports `--max-iterations` with `0 = unlimited`.
-3. Threshold configuration is surfaced in report metadata and documented in README.
-4. Triage supports deterministic per-node summaries with rolling stats and trend labels.
-5. Validation snapshot:
-   - targeted tests: `26 passed`
-   - full suite: `81 passed`
+- threshold_profile and thresholds_hash emitted in agent_start
+- bounded run mode via --max-iterations
+- mixed-threshold detection in summarize-dir
+- startup-event validation tooling
+- network signal fields added to report schema
+- deterministic contract test coverage expanded
 
-## Immediate Priorities
-
-### 1) Reconcile contract and implementation drift
-
-Goal:
-Bring code, schemas, tests, and README back into exact alignment.
-
-Scope:
-- Verify `triage/render/explain.py` matches the current config-aware threshold design.
-- Update `docs/contracts/event.schema.json` to reflect all emitted event fields that are part of the current contract.
-- Update `docs/contracts/report.schema.json` to reflect all report fields currently emitted, including threshold metadata and any network fields if contract-relevant.
-- Reconcile README examples and descriptions with actual emitted payloads and current CLI behavior.
-- Add or adjust tests where current contract coverage is missing.
-
-Done when:
-- No known drift remains between runtime behavior, schemas, tests, and README.
-- Current emitted fields are accurately represented in contract docs.
-- Explain renderer behavior matches the documented threshold-config story.
+Test status:
+87 passed, 0 failed
 
 ---
 
-### 2) Add fleet threshold mismatch detection
+# Immediate Next Work
+
+## 1. Operator-Focused Triage Improvements
 
 Goal:
-Flag mixed threshold configurations across node summaries in fleet-level triage.
+Improve usability and clarity of fleet triage output.
 
 Scope:
-- Add `--warn-mixed-thresholds` to `summarize-dir`.
-- Detect multiple `thresholds_hash` values across emitted node summaries.
-- Add deterministic warning output for human renderers (`text`, `pretty`, `table`, `explain`) when enabled.
-- Add machine-readable mixed-threshold metadata to JSON output.
-- Add tests for mixed and non-mixed fleet cases.
+
+- Fleet health summary header
+- Better explain renderer config awareness
+- Optional change detection mode
+- Improved watch-mode output
 
 Done when:
-- Fleet triage clearly indicates config drift when hashes differ.
-- JSON output includes deterministic mixed-threshold metadata.
-- Human-readable warnings appear only when appropriate and are stable.
+
+- summarize-dir shows fleet summary
+- explain output correctly reflects threshold config context
+- change detection highlights health transitions
+- watch mode displays fleet health summary
 
 ---
 
-### 3) Add startup-event contract validation
+## 2. Demo Fixtures
 
 Goal:
-Keep startup events and event schema in lockstep with stdlib-only validation tooling.
+Improve project demonstration and testing coverage.
 
 Scope:
-- Extend existing validation tooling with optional event-line validation mode.
-- Validate `agent_start` fields including:
-  - `mode`
-  - `threshold_profile`
-  - `thresholds_hash`
-  - optional `max_iterations`
-- Add tests for valid and invalid startup event lines.
+
+Add deterministic fleet scenarios:
+
+- healthy fleet
+- degraded nodes
+- mixed thresholds
+- reboot scenario
 
 Done when:
-- CI can validate both spool reports and startup events.
-- Startup event validation remains stdlib-only and deterministic.
+
+Fixtures support triage tests and README examples.
 
 ---
 
-### 4) Tighten bounded run contract tests
+# Next Major Work (After Next Branch)
+
+## Runtime Orchestration Cleanup
 
 Goal:
-Fully lock down deterministic bounded-run behavior for automation and CI.
+Reduce duplication and simplify runtime control flow.
 
 Scope:
-- Add assertions for exact `agent_tick` counts under `--max-iterations N`.
-- Add assertions for exact `agent_tick_metrics` counts under `--max-iterations N`.
-- Add regression coverage confirming `max_iterations` is omitted when `0` through the real CLI path.
-- Keep tests focused on contract-level behavior rather than implementation details.
+
+- Extract shared runtime pipeline
+- Reduce oneshot/run duplication
+- Isolate collector execution and health evaluation
+- Keep CLI behavior unchanged
 
 Done when:
-- Bounded run behavior is fully event-level contract tested.
-- Unlimited mode behavior remains unchanged.
 
-## Next Cleanup After Priorities
+agent/main.py becomes a thin orchestration layer.
 
-### 5) Reduce runtime orchestration duplication
+---
+
+## Renderer / Summary Architecture Cleanup
 
 Goal:
-Improve maintainability without changing public behavior.
+Simplify renderer and metadata handling.
 
 Scope:
-- Extract shared collector/evaluation/report assembly path from `oneshot` and `run`.
-- Reduce duplicated collector failure/event logic.
-- Preserve current output contracts and test behavior exactly.
-- Keep refactor scope narrow and non-architectural.
+
+- tighten NodeSummary structure
+- centralize warning/header logic
+- simplify renderer interfaces
 
 Done when:
-- `agent/main.py` no longer contains large duplicated runtime blocks.
-- Public behavior and tests remain unchanged.
 
-## Guardrails
+renderers consume consistent summary metadata.
 
-- Preserve deterministic outputs and stable CLI contracts unless a plan item explicitly changes them.
-- Prefer minimal diffs and avoid unrelated refactors.
-- Keep runtime dependencies unchanged.
-- Add or update tests for every behavior change.
-- Keep renderer output stable unless a plan item explicitly requires new output.
+---
+
+## Codebase Simplification
+
+Goal:
+Improve clarity and maintainability.
+
+Scope:
+
+- remove redundant comments
+- tighten docstrings
+- reduce helper duplication
+- improve module boundaries
+
+Done when:
+
+code reads clearly with minimal narrative comments.
+
+---
+
+# Guardrails
+
+- Preserve deterministic output ordering.
+- Maintain CLI contracts unless explicitly planned.
+- Avoid new dependencies.
+- Prefer minimal, targeted diffs.

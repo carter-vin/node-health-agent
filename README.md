@@ -673,6 +673,25 @@ node-health-triage summarize-dir --dir fleet_spools --format table
 
 **Constraint:** Each spool file **must** contain reports for exactly one node_id. Multi-node spools are rejected with an error.
 
+### Fleet Triage Summary
+
+`summarize-dir` includes a fleet health summary header showing:
+
+- total nodes
+- health counts
+- mixed-threshold detection
+
+Example:
+
+```
+FLEET SUMMARY
+nodes_total: 12
+ok: 10
+degraded: 2
+unhealthy: 0
+mixed_thresholds: false
+```
+
 ### Output Formats
 
 All triage commands support multiple output formats via `--format`:
