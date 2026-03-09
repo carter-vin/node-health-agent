@@ -577,15 +577,16 @@ node-health-agent/
 │   ├── collectors/          # System signal collection
 │   ├── emit.py              # Spool & event emission
 │   ├── evaluate.py          # Health evaluation logic
-│   ├── logging.py           # Event contract
-│   ├── main.py              # Agent loop & CLI
-│   ├── model.py             # Data models
-│   └── state.py             # State coordination
+│   ├── logging.py           # Structured event emission
+│   ├── main.py              # CLI entrypoint (thin wiring)
+│   ├── model.py             # Report schema & serialization
+│   ├── runtime.py           # Shared collector pipeline helpers
+│   └── state.py             # Seq/boot state coordination
 │
 ├── triage/                  # Operator tooling
 │   ├── cli.py               # Triage CLI commands
 │   ├── read.py              # Spool file reader
-│   ├── summarize.py         # Per-node aggregation
+│   ├── summarize.py         # Per-node aggregation & filtering
 │   └── render/              # Output format renderers
 │       ├── base.py          # Renderer base class
 │       ├── json.py          # JSON renderer
@@ -675,21 +676,14 @@ node-health-triage summarize-dir --dir fleet_spools --format table
 
 ### Fleet Triage Summary
 
-`summarize-dir` includes a fleet health summary header showing:
+`summarize-dir` includes a fleet health summary header showing node counts by health state.
 
-- total nodes
-- health counts
-- mixed-threshold detection
-
-Example:
+Example (text format):
 
 ```
-FLEET SUMMARY
-nodes_total: 12
-ok: 10
-degraded: 2
-unhealthy: 0
-mixed_thresholds: false
+fleet_ok: 10
+fleet_degraded: 2
+fleet_unhealthy: 0
 ```
 
 ### Output Formats
@@ -723,10 +717,10 @@ Top reasons: none
 
 **Table Format Example:**
 ```
-NODE           HEALTH    CPU1  MEM_FREE  DISK_FREE  DEG  UNH
-prod-web-01    OK        0.8   12G       500G       0    0
-prod-db-01     DEGRADED  2.1   4G        50G        15   0
-prod-cache-01  UNHEALTHY 8.5   1G        10G        0    2
+NODE           HEALTH    CPU1  MEM_FREE  DISK_FREE  DEG  UNH  TRNS
+prod-web-01    OK        0.8   12G       500G       0    0    0
+prod-db-01     DEGRADED  2.1   4G        50G        15   0    3
+prod-cache-01  UNHEALTHY 8.5   1G        10G        0    2    1
 ```
 
 **JSON Format Example:**
@@ -777,6 +771,9 @@ node-health-triage summarize --spool spool/node_reports.jsonl --only-unhealthy
 
 # Advanced: nodes with at least 5 degraded reports in tail
 node-health-triage summarize --spool spool/node_reports.jsonl --min-degraded-count 5
+
+# Only nodes with recent health transitions (useful for detecting instability)
+node-health-triage summarize-dir --dir fleet --changes-only
 
 # Combine filters (AND logic)
 node-health-triage summarize-dir --dir fleet --format table --only-degraded --min-degraded-count 3
