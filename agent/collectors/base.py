@@ -1,34 +1,25 @@
 """
 agent.collectors.base
-AUTHOR: carter-vin
 
-Light result wrapper -> prevent collector errors from crashing agent
+Collector result wrapper. Prevents collector errors from crashing the agent.
 """
 
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass(frozen=True)
 class CollectorOutcome:
-    """
-    Normalized collector result
-    - ok: false=failure, error details in error field
-    - value: collector result object if ok=true
-    """
-
     name: str
     ok: bool
-    value: Optional[Any] = None
-    error_type: Optional[str] = None
-    error_message: Optional[str] = None
+    value: Any = None
+    error_type: str | None = None
+    error_message: str | None = None
 
 
 def run_collector(name: str, fn, *args, **kwargs) -> CollectorOutcome:
-    """
-    Run collector & collect failure as data
-    """
+    """Run a collector function, capturing any exception as a failed outcome."""
     try:
         v = fn(*args, **kwargs)
         return CollectorOutcome(name=name, ok=True, value=v, error_type=None, error_message=None)

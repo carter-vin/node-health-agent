@@ -1,37 +1,29 @@
 """
 agent.collectors.cpu
-AUTHOR: carter-vin
 
-CPU collector
-- Linux-first, macOS compatible for load average
-- stdlib only
-- degrade gracefully when load averages are unavailable
+CPU load averages and logical core count. Degrades gracefully on platforms
+where load averages are unavailable (e.g. Windows).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 import os
-from typing import Optional
 
 
 @dataclass(frozen=True)
 class CpuResult:
-    loadavg_1m: Optional[float]
-    loadavg_5m: Optional[float]
-    loadavg_15m: Optional[float]
-    cpu_count_logical: Optional[int]
+    loadavg_1m: float | None
+    loadavg_5m: float | None
+    loadavg_15m: float | None
+    cpu_count_logical: int | None
 
 
 def collect_cpu() -> CpuResult:
-    """
-    Collect CPU load averages and logical CPU count
-
-    Load averages are unavailable on some platforms
-    """
-    loadavg_1m: Optional[float] = None
-    loadavg_5m: Optional[float] = None
-    loadavg_15m: Optional[float] = None
+    """Collect CPU load averages and logical CPU count."""
+    loadavg_1m: float | None = None
+    loadavg_5m: float | None = None
+    loadavg_15m: float | None = None
 
     try:
         loadavg_1m, loadavg_5m, loadavg_15m = os.getloadavg()

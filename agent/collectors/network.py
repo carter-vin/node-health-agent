@@ -1,33 +1,28 @@
 """
 agent.collectors.network
-AUTHOR: carter-vin
 
-Network I/O collector
-- Linux-first via /proc/net/dev and /proc/net/tcp
-- macOS and non-Linux degrade gracefully (returns None values)
-- stdlib only
+Network I/O and active TCP connections from /proc (Linux). Returns None
+values on non-Linux without raising.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 
 PROC_NET_DEV = Path("/proc/net/dev")
 PROC_NET_TCP = Path("/proc/net/tcp")
 PROC_NET_TCP6 = Path("/proc/net/tcp6")
 
-# TCP state ESTABLISHED = "01"
-_TCP_ESTABLISHED = "01"
+_TCP_ESTABLISHED = "01"  # /proc/net/tcp state field value for ESTABLISHED
 
 
 @dataclass(frozen=True)
 class NetworkResult:
-    net_rx_bytes_total: Optional[int]
-    net_tx_bytes_total: Optional[int]
-    net_active_tcp_connections: Optional[int]
+    net_rx_bytes_total: int | None
+    net_tx_bytes_total: int | None
+    net_active_tcp_connections: int | None
 
 
 def _parse_net_dev(contents: str) -> tuple[int, int]:
@@ -84,9 +79,9 @@ def collect_network() -> NetworkResult:
 
     On non-Linux systems, all fields return None without raising.
     """
-    rx_total: Optional[int] = None
-    tx_total: Optional[int] = None
-    tcp_count: Optional[int] = None
+    rx_total: int | None = None
+    tx_total: int | None = None
+    tcp_count: int | None = None
 
     if PROC_NET_DEV.exists():
         contents = PROC_NET_DEV.read_text(encoding="utf-8")

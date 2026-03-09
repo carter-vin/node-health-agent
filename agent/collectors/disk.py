@@ -1,10 +1,7 @@
 """
 agent.collectors.disk
-AUTHOR: carter-vin
 
-Disk collector
-- Uses shutil.disk_usage for cross-platform support
-- stdlib only
+Disk usage via shutil.disk_usage (cross-platform, stdlib only).
 """
 
 from __future__ import annotations
@@ -21,9 +18,7 @@ class DiskResult:
 
 
 def collect_disk(path: str = "/") -> DiskResult:
-    """
-    Collect disk usage for a given path
-    """
+    """Collect disk usage statistics for the given filesystem path."""
     usage = shutil.disk_usage(path)
     return DiskResult(
         disk_total_bytes=usage.total,

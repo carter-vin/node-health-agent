@@ -1,18 +1,13 @@
 """
 agent.collectors.memory
-AUTHOR: carter-vin
 
-Memory collector
-- Linux-first via /proc/meminfo
-- macOS and non-Linux degrade gracefully
-- stdlib only
+Memory totals from /proc/meminfo (Linux). Returns None values on non-Linux.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 
 PROC_MEMINFO = Path("/proc/meminfo")
@@ -20,14 +15,12 @@ PROC_MEMINFO = Path("/proc/meminfo")
 
 @dataclass(frozen=True)
 class MemoryResult:
-    mem_total_bytes: Optional[int]
-    mem_available_bytes: Optional[int]
+    mem_total_bytes: int | None
+    mem_available_bytes: int | None
 
 
 def _parse_meminfo(contents: str) -> dict[str, int]:
-    """
-    Parse /proc/meminfo into a dict of values in bytes
-    """
+    """Parse /proc/meminfo into a dict of field name → bytes."""
     values: dict[str, int] = {}
     for line in contents.splitlines():
         parts = line.split()
@@ -43,11 +36,7 @@ def _parse_meminfo(contents: str) -> dict[str, int]:
 
 
 def collect_memory() -> MemoryResult:
-    """
-    Collect memory totals from /proc/meminfo when available
-
-    On non-Linux systems, return empty values without failing
-    """
+    """Return memory totals from /proc/meminfo; returns None values on non-Linux."""
     if not PROC_MEMINFO.exists():
         return MemoryResult(mem_total_bytes=None, mem_available_bytes=None)
 

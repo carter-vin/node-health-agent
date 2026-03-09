@@ -1,14 +1,8 @@
 """
 agent.collectors.heartbeat
 
-AUTHOR: carter-vin
-
-- Always returns heartbeat_ok=True unless the process is in a known degraded state
-- This is intentionally trivial; it exists to validate the collector→report pipeline
-
-Future extension:
-- include monotonic tick / loop timing stats
-- include "last_emit_success" once emission pipeline exists
+Always returns heartbeat_ok=True. Exists to validate the collector→report
+pipeline end-to-end. Raises on NODE_AGENT_FAIL_HEARTBEAT=1 (test hook).
 """
 
 from __future__ import annotations
@@ -22,10 +16,6 @@ class HeartbeatResult:
 
 
 def collect_heartbeat() -> HeartbeatResult:
-    """
-    Return a simple heartbeat signal
-    """
-    # Test hook for validation
     if os.environ.get("NODE_AGENT_FAIL_HEARTBEAT") == "1":
         raise RuntimeError("Simulated heartbeat failure")
 
