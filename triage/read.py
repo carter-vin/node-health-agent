@@ -1,8 +1,7 @@
 """
 triage.read
-AUTHOR: carter-vin
 
-JSONL reader utilities for triage
+JSONL reader utilities for triage.
 """
 
 from __future__ import annotations

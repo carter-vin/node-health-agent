@@ -1,8 +1,7 @@
 """
 triage.cli
-AUTHOR: carter-vin
 
-Minimal triage CLI for local operator workflows
+Minimal triage CLI for local operator workflows.
 """
 
 from __future__ import annotations
@@ -15,46 +14,24 @@ import typer
 
 from triage.read import last_valid_report, tail_jsonl, tail_jsonl_with_stats
 from triage.render import get_renderer
-from triage.summarize import summarize_by_node, summarize_reports
+from triage.summarize import apply_filters, summarize_by_node, summarize_reports
 
 
 app = typer.Typer(add_completion=False, help="node-health-triage: local triage tools")
 
 
-def _apply_filters(
-    summaries,
-    *,
-    node: str | None,
-    only_degraded: bool,
-    only_unhealthy: bool,
-    min_degraded_count: int | None,
-    changes_only: bool = False,
-):
-    if only_degraded and only_unhealthy:
-        raise typer.BadParameter("--only-degraded and --only-unhealthy are mutually exclusive")
-
-    filtered = list(summaries)
-
-    if node:
-        filtered = [summary for summary in filtered if summary.node_id == node]
-
-    if only_degraded:
-        filtered = [summary for summary in filtered if summary.current_health == "DEGRADED"]
-
-    if only_unhealthy:
-        filtered = [summary for summary in filtered if summary.current_health == "UNHEALTHY"]
-
-    if min_degraded_count is not None and min_degraded_count > 0:
-        filtered = [
-            summary
-            for summary in filtered
-            if summary.degraded_count_tail >= min_degraded_count
-        ]
-
-    if changes_only:
-        filtered = [s for s in filtered if s.health_transitions_tail > 0]
-
-    return filtered
+def _apply_filters(summaries, *, node, only_degraded, only_unhealthy, min_degraded_count, changes_only=False):
+    try:
+        return apply_filters(
+            summaries,
+            node=node,
+            only_degraded=only_degraded,
+            only_unhealthy=only_unhealthy,
+            min_degraded_count=min_degraded_count,
+            changes_only=changes_only,
+        )
+    except ValueError as e:
+        raise typer.BadParameter(str(e))
 
 
 def _maybe_exit_by_health(*, summaries, only_degraded: bool, only_unhealthy: bool) -> None:

@@ -1,8 +1,7 @@
 """
 triage.summarize
-AUTHOR: carter-vin
 
-Deterministic summarization for operator-friendly output
+Deterministic summarization and filtering for operator triage output.
 """
 
 from __future__ import annotations
@@ -15,10 +14,6 @@ from typing import Iterable
 
 TRIAGE_SCHEMA_VERSION = "1"
 
-
-# ---------------------------------------------------------------------------
-# Trend detection helpers
-# ---------------------------------------------------------------------------
 
 def _parse_iso_epoch(ts: str) -> float | None:
     """Parse ISO 8601 timestamp to epoch float. Returns None on failure."""
@@ -128,12 +123,10 @@ class NodeSummary:
     mem_available_bytes: int | None
     disk_total_bytes: int | None
     disk_free_bytes: int | None
-    # Rolling-window stats (None when no records contain the signal)
     max_cpu1_tail: float | None = None
     min_mem_available_pct_tail: float | None = None
     min_disk_free_pct_tail: float | None = None
     health_transitions_tail: int = 0
-    # Trend detection: keyed by signal name; None when fewer than 2 data points
     signal_trends: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
@@ -216,7 +209,6 @@ def summarize_by_node(
                 "mem_pct_values": [],
                 "disk_pct_values": [],
                 "health_sequence": [],
-                # Time-series for trend detection: (epoch_seconds, value)
                 "ts_cpu1": [],
                 "ts_mem_avail": [],
                 "ts_disk_free": [],
@@ -447,6 +439,35 @@ def render_json(node_summaries: Iterable[NodeSummary], *, meta: dict) -> dict:
         "meta": meta_payload,
         "nodes": [summary.to_dict() for summary in summaries],
     }
+
+
+def apply_filters(
+    summaries: list[NodeSummary],
+    *,
+    node: str | None,
+    only_degraded: bool,
+    only_unhealthy: bool,
+    min_degraded_count: int | None,
+    changes_only: bool = False,
+) -> list[NodeSummary]:
+    """Filter a list of NodeSummary objects by operator-specified criteria."""
+    if only_degraded and only_unhealthy:
+        raise ValueError("only_degraded and only_unhealthy are mutually exclusive")
+
+    filtered = list(summaries)
+
+    if node:
+        filtered = [s for s in filtered if s.node_id == node]
+    if only_degraded:
+        filtered = [s for s in filtered if s.current_health == "DEGRADED"]
+    if only_unhealthy:
+        filtered = [s for s in filtered if s.current_health == "UNHEALTHY"]
+    if min_degraded_count is not None and min_degraded_count > 0:
+        filtered = [s for s in filtered if s.degraded_count_tail >= min_degraded_count]
+    if changes_only:
+        filtered = [s for s in filtered if s.health_transitions_tail > 0]
+
+    return filtered
 
 
 def summarize_reports(reports: Iterable[dict]) -> str:
