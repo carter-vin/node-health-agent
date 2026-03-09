@@ -1,18 +1,10 @@
 """
 agent.emit
 
-AUTHOR: carter-vin
+Append-only JSONL spool writer with optional rotation.
 
-OUTPUT:
-- JSON Lines spool file
-- one JSON object per line
-- append-only
-
-Design goals:
-- Create spool directory if missing
-- Append one line per report
-- Flush per write so tail/ingest can see updates immediately
-- Provide explicit error surfaces (do not silently drop data)
+Creates spool directory on first write. Flushes after each line so
+tailing consumers see updates immediately.
 """
 
 from __future__ import annotations
@@ -28,14 +20,6 @@ DEFAULT_SPOOL_FILE = DEFAULT_SPOOL_DIR / "node_reports.jsonl"
 
 @dataclass(frozen=True)
 class EmitTargets:
-    """
-    Emission destination configuration.
-
-    We keep this as a dataclass so:
-    - it's explicit in call sites
-    - it becomes easy to extend later (rotations, per-node files, etc.)
-    """
-
     spool_path: Path = DEFAULT_SPOOL_FILE
     emit_stdout: bool = False
     spool_max_bytes: int | None = None
@@ -43,16 +27,11 @@ class EmitTargets:
 
 
 def _rotation_path(spool_path: Path, index: int) -> Path:
-    """
-    Build rotation path with numeric suffix
-    """
     return spool_path.with_name(f"{spool_path.stem}.{index}{spool_path.suffix}")
 
 
 def maybe_rotate_spool(targets: EmitTargets) -> dict[str, object] | None:
-    """
-    Rotate spool file when it exceeds max size
-    """
+    """Rotate the spool when it exceeds spool_max_bytes. Returns rotation info or None."""
     if targets.spool_max_bytes is None or targets.spool_max_bytes <= 0:
         return None
 
@@ -87,19 +66,8 @@ def maybe_rotate_spool(targets: EmitTargets) -> dict[str, object] | None:
 
 
 def append_jsonl_line(spool_path: Path, line: str) -> None:
-    """
-    Append a single JSON string as one JSONL line.
-
-    Contract:
-    - 'line' must already be valid JSON (single object)
-    - this function adds exactly one trailing newline
-
-    Failure semantics:
-    - raises on IO errors; caller decides how to handle (oneshot exits non-zero)
-    """
+    """Append one JSON line to the spool. Raises on IO errors."""
     spool_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Open in append mode; create if missing
     with spool_path.open(mode="a", encoding="utf-8", newline="\n") as f:
         f.write(line)
         f.write("\n")
@@ -112,18 +80,8 @@ def emit_report_json(
     *,
     on_spool_error: Optional[Callable[[Exception, Path], None]] = None,
 ) -> dict[str, object] | None:
-    """
-    Emit a report JSON string to configured targets.
-
-    Why this exists:
-    - Ensures stdout and spool behavior stays consistent across modes
-    - Centralizes "where do reports go?" logic
-
-    report_json:
-    - must be a single JSON object string (no trailing newline)
-    """
+    """Emit report JSON to configured targets. Returns rotation info if rotation occurred."""
     if targets.emit_stdout:
-        # Stdout emission is primarily for local debugging and demos
         print(report_json)
 
     try:
@@ -131,7 +89,6 @@ def emit_report_json(
         append_jsonl_line(targets.spool_path, report_json)
         return rotation_info
     except Exception as e:
-        # Callback allows the caller to surface spool errors without coupling modules
         if on_spool_error is not None:
             on_spool_error(e, targets.spool_path)
         raise

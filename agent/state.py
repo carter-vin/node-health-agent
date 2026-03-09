@@ -1,24 +1,8 @@
 """
 agent.state
-AUTHOR: carter-vin
 
-Persistent agent state (repo-local ./state)
-
-Current responsibilities:
-- Deterministic per-boot sequence counter (seq) scoped to identity.boot_id
-- Commit semantics: seq increments ONLY after a successful emit
-
-State file:
-- ./state/seq.json
-  {
-    "boot_id": "<boot scope>",
-    "next_seq": 1
-  }
-
-Design goals:
-- Small surface area
-- Explicit failure modes
-- Safe defaults (reset on boot_id change)
+Persistent sequence counter scoped to boot_id. State lives in ./state/seq.json.
+seq advances only after a successful emit; boot_id change resets it to 1.
 """
 
 from __future__ import annotations
@@ -35,15 +19,6 @@ SEQ_STATE_FILE = "seq.json"
 
 @dataclass(frozen=True)
 class SeqState:
-    """
-    Stored seq state.
-
-    boot_id:
-    - boot scope key
-    next_seq:
-    - next sequence number to emit (must be >= 1)
-    """
-
     boot_id: str
     next_seq: int
 
@@ -53,21 +28,10 @@ class SeqState:
     @staticmethod
     def from_dict(payload: dict[str, Any]) -> "SeqState":
         boot_id = str(payload.get("boot_id", "")).strip()
-        next_seq = payload.get("next_seq", 1)
-
-        # Defensive parsing; keep it strict but survivable
         try:
-            next_seq_int = int(next_seq)
+            next_seq_int = max(1, int(payload.get("next_seq", 1)))
         except Exception:
             next_seq_int = 1
-
-        if not boot_id:
-            # Caller should treat this as invalid and reset
-            boot_id = ""
-
-        if next_seq_int < 1:
-            next_seq_int = 1
-
         return SeqState(boot_id=boot_id, next_seq=next_seq_int)
 
 
@@ -115,12 +79,12 @@ def save_seq_state(state: SeqState, *, state_dir: Path = DEFAULT_STATE_DIR) -> N
     """
     state_dir.mkdir(parents=True, exist_ok=True)
     path = _state_path(state_dir)
-
-    # Deterministic JSON: stable ordering and compact formatting
-    path.write_text(
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(
         json.dumps(state.to_dict(), sort_keys=True, separators=(",", ":")) + "\n",
         encoding="utf-8",
     )
+    tmp.replace(path)  # atomic on POSIX
 
 
 def get_seq_for_boot(boot_id: str, *, state_dir: Path = DEFAULT_STATE_DIR) -> int:

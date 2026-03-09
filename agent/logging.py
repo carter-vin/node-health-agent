@@ -1,13 +1,9 @@
 """
 agent.logging
-AUTHOR: carter-vin
 
-Structured JSON event logging for ops ingestion
+Structured JSON event emission to stdout.
 
-Contract:
-- One JSON object per line to stdout
-- Stable event vocabulary (allowlist)
-- UTC timestamps only
+Contract: one JSON object per line, stable event vocabulary (allowlist), UTC timestamps.
 """
 
 from __future__ import annotations
@@ -30,33 +26,22 @@ VALID_EVENT_TYPES = {
 
 
 def _truncate_message(value: str, *, limit: int = 200) -> str:
-    """
-    Cap message length to keep events compact
-    """
+    """Cap message length to keep events compact."""
     if len(value) <= limit:
         return value
     return value[:limit] + f"...[truncated {len(value) - limit} chars]"
 
 
-# Time: current in UTC ISO 8601
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
 def emit_event(event_type: str, *, agent_version: str, **fields: Any) -> None:
-    """
-    Emit structured event line to stdout
-
-    Rules:
-    - event_type in VALID_EVENT_TYPES
-    - event_type, agent_version, timestamp always present
-    - sort_keys + compact separators for format
-    """
+    """Emit a structured JSON event line to stdout. Raises ValueError for unknown event types."""
     if event_type not in VALID_EVENT_TYPES:
         raise ValueError(f"invalid event_type: {event_type}")
 
     if "message" in fields and isinstance(fields["message"], str):
-        # Avoid emitting long strings in event fields
         fields["message"] = _truncate_message(fields["message"])
 
     payload: dict[str, Any] = {
