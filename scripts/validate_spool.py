@@ -38,20 +38,11 @@ class ValidationError(NamedTuple):
 
 
 def _is_rfc3339(value: object) -> bool:
-    """
-    Best-effort RFC3339 timestamp check using datetime.fromisoformat (Python 3.11+
-    handles timezone offsets; earlier versions require manual stripping).
-    """
+    """Best-effort RFC3339 timestamp check using datetime.fromisoformat."""
     if not isinstance(value, str) or not value:
         return False
     try:
         datetime.fromisoformat(value)
-        return True
-    except ValueError:
-        pass
-    # Fallback: try replacing trailing Z with +00:00 for Python < 3.11
-    try:
-        datetime.fromisoformat(value.replace("Z", "+00:00"))
         return True
     except ValueError:
         return False

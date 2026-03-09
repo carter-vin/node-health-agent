@@ -15,7 +15,7 @@ from typer.testing import CliRunner
 from triage.cli import app
 from triage.render.explain import ExplainRenderer
 from triage.render.pretty import PrettyRenderer
-from triage.summarize import NodeSummary, render_text, summarize_by_node
+from triage.summarize import NodeSummary, apply_filters, render_text, summarize_by_node
 
 
 # ---------------------------------------------------------------------------
@@ -243,3 +243,19 @@ def test_demo_reboot_fixture_boot_id_changes() -> None:
     # Latest boot_id wins
     assert summaries[0].current_boot_id == "boot-g2"
     assert summaries[0].node_id == "demo-node-g"
+
+
+# ---------------------------------------------------------------------------
+# apply_filters mutual exclusion
+# ---------------------------------------------------------------------------
+
+def test_apply_filters_mutual_exclusion_raises() -> None:
+    summaries = [_make_summary("node-a", "DEGRADED")]
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        apply_filters(
+            summaries,
+            node=None,
+            only_degraded=True,
+            only_unhealthy=True,
+            min_degraded_count=None,
+        )
